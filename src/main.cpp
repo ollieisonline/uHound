@@ -414,11 +414,12 @@ struct PlaybackControl {
     }
 };
 
-// How long a stream request that burns in a subtitle track may take to start
-// answering (see PlayOptions::startupTimeoutSeconds). Jellyfin extracts the
-// track from the media file first -- a read of the whole file for an embedded
-// track -- so this is generous; B cancels the wait at any point.
-static const int SUBTITLE_STARTUP_TIMEOUT_SECONDS = 90;
+// How long a stream may take to start answering at all (see
+// PlayOptions::startupTimeoutSeconds). Hound has no transcode to prepare, but
+// a P2P (torrent) stream first has to find peers and pull the first pieces
+// before the server sends a byte, which routinely outlasts the default wait --
+// so this is generous; B cancels the wait at any point.
+static const int STREAM_STARTUP_TIMEOUT_SECONDS = 90;
 
 // Audio / subtitle language carried from one episode to the next.
 struct TrackPrefs {
@@ -555,7 +556,7 @@ static PlayResult playItem(HoundClient& client, const UfinConfig& cfg, const Med
     showBusy(isLive ? "Tuning" : "Loading",
              {title, "",
               isLive ? "Asking the server to tune the channel and start the transcode."
-                     : "Waiting for the server to start streaming."});
+                     : "Waiting for the server to start streaming (P2P streams can take a minute -- B cancels)."});
 
     if (isLive) {
         errorMessage = "Live TV isn't available on Hound.";
@@ -820,19 +821,11 @@ static PlayResult playItem(HoundClient& client, const UfinConfig& cfg, const Med
                      h264::wireName(h264::parse(videoOptions.profile)), videoOptions.width,
                      videoOptions.height, videoOptions.videoBitrate);
         }
-        // A burned-in subtitle makes Jellyfin prepare the track (extract it, and
-        // its fonts, from the media file) before it answers the stream request at
-        // all, which can take far longer than the usual 15 s wait for the first
-        // bytes -- so that wait is longer here, and B cancels it (see
-        // PlayOptions::startupTimeoutSeconds). No subtitle: unchanged.
-        const bool burnedInSubtitle = !isAudio && videoOptions.subtitleStreamIndex >= 0;
-        playOptions.startupTimeoutSeconds = burnedInSubtitle ? SUBTITLE_STARTUP_TIMEOUT_SECONDS : 0;
-        if (burnedInSubtitle) {
-            OSReport("Ufin: subtitles: track %d (%s) burned in by the server%s\n", videoOptions.subtitleStreamIndex,
-                     videoOptions.subtitleIsText ? "text" : "bitmap or unknown",
-                     (videoOptions.subtitleIsText && videoOptions.startTimeTicks > 0) ? ", source timestamps kept (CopyTimestamps)" : "");
-            showBusy("Loading", {title, "", "Preparing the subtitles on the server (B to cancel)."});
-        }
+        // Hound's P2P streams can take a long time to send their first byte
+        // (peer discovery + the first torrent pieces), so the wait for them
+        // is generous and B cancels it (see PlayOptions::startupTimeoutSeconds).
+        // Music files are local to the server and start immediately.
+        playOptions.startupTimeoutSeconds = isAudio ? 0 : STREAM_STARTUP_TIMEOUT_SECONDS;
         playOptions.startOffsetSeconds = startAt;
 
         result = player.play(target.host, target.port, target.path,

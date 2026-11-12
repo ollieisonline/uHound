@@ -35,7 +35,10 @@ class HttpStreamReader {
 public:
     // How long any single wait for the server's next bytes may last. Also
     // the default for the very first response bytes (setStartupTimeoutSeconds).
-    static const int DEFAULT_TIMEOUT_SECONDS = 15;
+    // Hound's P2P streams deliver in pieces as the torrent downloads, so a
+    // stall of tens of seconds mid-playback is normal rather than dead --
+    // the wait gives the next piece time to arrive before giving up.
+    static const int DEFAULT_TIMEOUT_SECONDS = 30;
 
     HttpStreamReader(std::string host, int port, std::string path);
     ~HttpStreamReader();

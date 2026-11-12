@@ -378,6 +378,32 @@ bool HttpStreamReader::open() {
     OSReport("Ufin: headers parsed ok, is_chunked=%d content-type=%s\n", (int)is_chunked_,
              contentType.empty() ? "(none)" : contentType.c_str());
 
+    // A 200 whose body is not media (a JSON error object, or an HTML page
+    // from an upstream the server proxied) would otherwise only fail later
+    // as a cryptic FFmpeg "Invalid data found" inside the decoder. Refuse
+    // it here, with the body's own message.
+    const std::string lowerType = toLower(contentType);
+    if (lowerType.find("json") != std::string::npos ||
+        lowerType.find("text/html") != std::string::npos) {
+        std::string body;
+        if (sock_buf_pos_ < sock_buf_len_ || waitReadable(sock_, 2)) {
+            if (fillSockBuf()) {
+                size_t avail = sock_buf_len_ - sock_buf_pos_;
+                body.assign((const char*)sock_buf_.data() + sock_buf_pos_,
+                            std::min<size_t>(avail, 300));
+            }
+        }
+        for (char& c : body) {
+            if ((unsigned char)c < 0x20) c = ' ';
+        }
+        OSReport("Ufin: stream body is %s, not media: %s\n", contentType.c_str(), body.c_str());
+        last_error_ = "the server did not send video for this stream";
+        if (!body.empty()) last_error_ += ": " + body.substr(0, 120);
+        close(sock_);
+        sock_ = -1;
+        return false;
+    }
+
     // If Jellyfin ever serves this non-chunked (e.g. a future version
     // that supports direct play here), read()/readRawBytes() below fall
     // back to "raw bytes straight from the socket until it closes",

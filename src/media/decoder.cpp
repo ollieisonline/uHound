@@ -168,8 +168,10 @@ bool Decoder::open(AVIOContext* avioCtx) {
     // by probing the actual bytes via avioCtx.
     int ret = avformat_open_input(&fmt_ctx_, "stream", nullptr, nullptr);
     if (ret < 0) {
-        snprintf(last_error_, sizeof(last_error_), "avformat_open_input failed (%d)", ret);
-        OSReport("Ufin: avformat_open_input failed (%d)\n", ret);
+        char errbuf[96];
+        av_strerror(ret, errbuf, sizeof(errbuf));
+        snprintf(last_error_, sizeof(last_error_), "avformat_open_input failed (%d: %s)", ret, errbuf);
+        OSReport("Ufin: avformat_open_input failed (%d: %s)\n", ret, errbuf);
         return false;
     }
     OSReport("Ufin: avformat_open_input ok (format=%s)\n", fmt_ctx_->iformat->name);
