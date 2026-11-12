@@ -2,7 +2,7 @@
 // shuffled, and moves to the next/previous track. Pure logic (no wut),
 // covered by tests/host/test_play_queue.cpp.
 #pragma once
-#include "jellyfin_client.h"
+#include "hound_client.h"
 
 #include <cstdint>
 #include <string>
@@ -17,7 +17,7 @@ public:
 
     // Queue of `items` starting at items[startIndex]. With shuffle, the
     // start track plays first and the rest follow in random order.
-    PlayQueue(std::vector<JellyfinItem> items, size_t startIndex, bool shuffle, uint32_t seed)
+    PlayQueue(std::vector<MediaItem> items, size_t startIndex, bool shuffle, uint32_t seed)
         : items_(std::move(items)) {
         if (items_.empty()) return;
         if (startIndex >= items_.size()) startIndex = 0;
@@ -44,7 +44,7 @@ public:
     size_t position() const { return pos_; } // 0-based place in play order
     bool shuffled() const { return shuffled_; }
 
-    const JellyfinItem& current() const { return items_[order_[pos_]]; }
+    const MediaItem& current() const { return items_[order_[pos_]]; }
     Repeat repeat() const { return repeat_; }
     void setRepeat(Repeat r) { repeat_ = r; wrap_.clear(); }
     // Off -> All -> One -> Off (one button: press it again for the next mode).
@@ -75,7 +75,7 @@ public:
         return pos_ + 1 < order_.size() || repeat_ == Repeat::All;
     }
     bool hasPrevious() const { return pos_ > 0 || (repeat_ == Repeat::All && order_.size() > 1); }
-    const JellyfinItem* peekNext() const {
+    const MediaItem* peekNext() const {
         if (!hasNext()) return nullptr;
         if (pos_ + 1 < order_.size()) return &items_[order_[pos_ + 1]];
         if (shuffled_) { ensureWrap(); return &items_[wrap_[0]]; } // the next round's first track
@@ -135,7 +135,7 @@ private:
         if (wrap_.size() > 1 && wrap_[0] == order_.back()) std::swap(wrap_[0], wrap_[1 + wrapState_ % (wrap_.size() - 1)]);
     }
 
-    std::vector<JellyfinItem> items_;
+    std::vector<MediaItem> items_;
     std::vector<size_t> order_;
     size_t pos_ = 0;
     bool shuffled_ = false;
@@ -148,9 +148,9 @@ private:
 // `selected` is the index in `list` of the track to start from (or of
 // anything else, in which case the queue starts at the first track);
 // returns the tracks and sets `startIndex` to that track's place.
-inline std::vector<JellyfinItem> audioTracks(const std::vector<JellyfinItem>& list, size_t selected,
+inline std::vector<MediaItem> audioTracks(const std::vector<MediaItem>& list, size_t selected,
                                              size_t& startIndex) {
-    std::vector<JellyfinItem> tracks;
+    std::vector<MediaItem> tracks;
     startIndex = 0;
     for (size_t i = 0; i < list.size(); i++) {
         if (list[i].type != "Audio") continue;

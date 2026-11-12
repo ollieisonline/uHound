@@ -23,7 +23,7 @@ bool updateTexture(uint64_t handle, const uint8_t* rgba, int width, int height);
 // with releaseTexture(). Returns 0 if it cannot be created. `asRenderTarget` also
 // flags the surface as a colour buffer (a copy implemented as a draw may need it);
 // false makes it a plain texture. Logs both surfaces' layout (size, pitch, tiling,
-// swizzle...) so a mismatch between source and copy can be seen in ufin_log.txt.
+// swizzle...) so a mismatch between source and copy can be seen in uhound_log.txt.
 uint64_t createSnapshotTexture(const GX2ColorBuffer* src, bool asRenderTarget = true);
 
 // Copies everything drawn so far into `src` (the colour buffer currently being

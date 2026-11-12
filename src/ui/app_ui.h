@@ -182,7 +182,7 @@ struct LoginModel {
 
 struct QuickConnectModel {
     std::string code;      // "123456"
-    std::string server;    // "192.168.1.100:8096"
+    std::string server;    // "192.168.1.100:2323"
     std::string message;   // status / error
     bool messageIsError = false;
     std::vector<Hint> hints;

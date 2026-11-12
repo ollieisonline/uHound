@@ -77,7 +77,7 @@ static Accent g_accentStyle = Accent::Blue;
 
 const char* accentName(Accent a) {
     switch (a) {
-        case Accent::Blue:    return "Jellyfin blue";
+        case Accent::Blue:    return "Hound blue";
         case Accent::Purple:  return "Purple";
         case Accent::Green:   return "Green";
         case Accent::Orange:  return "Orange";
@@ -1312,7 +1312,7 @@ static void drawLogo(float x, float y) {
     const float s = 40.0f;
     gradientRoundRect(x, y, x + s, y + s, 10.0f, accentSecond(), accentMain());
     dl()->AddTriangleFilled(ImVec2(x + 15, y + 11), ImVec2(x + 15, y + 29), ImVec2(x + 30, y + 20), col::WHITE);
-    text(34.0f, x + s + 14.0f, y + 1.0f, col::TEXT, "Ufin");
+    text(34.0f, x + s + 14.0f, y + 1.0f, col::TEXT, "uHound");
 }
 
 static void drawProgress(float x, float y, float w, float h, double position, double duration, bool live) {
@@ -1470,7 +1470,7 @@ static void drawUsageCelebration() {
             ImVec2 ts = font()->CalcTextSizeA(size, 1e9f, 0.0f, str.c_str());
             fg->AddText(font(), size, ImVec2(cx - ts.x * 0.5f, y), color, str.c_str());
         };
-        centred(TEXT_M, cy - 104.0f, bgTint(col::MUTED, ta), "Time with Ufin");
+        centred(TEXT_M, cy - 104.0f, bgTint(col::MUTED, ta), "Time with uHound");
         centred(76.0f, cy - 70.0f, bgTint(col::TEXT, ta), g_celebBig);
         centred(TEXT_S, cy + 44.0f, bgTint(col::MUTED, ta), g_celebSmall);
         if (t > 1.2f) centred(TEXT_S - 2, cy + 108.0f, bgTint(col::DIM, clamp01((t - 1.2f) / 0.5f)), "Tap or press any button");
@@ -2010,15 +2010,15 @@ static void drawBrandPanel() {
     const float s = 96.0f, x = 110.0f, y = 210.0f;
     gradientRoundRect(x, y, x + s, y + s, 24.0f, accentSecond(), accentMain());
     dl()->AddTriangleFilled(ImVec2(x + 36, y + 26), ImVec2(x + 36, y + 70), ImVec2(x + 72, y + 48), col::WHITE);
-    text(64.0f, x, y + s + 24.0f, col::TEXT, "Ufin");
-    text(TEXT_M, x, y + s + 100.0f, col::MUTED, "Jellyfin for the Wii U");
+    text(64.0f, x, y + s + 24.0f, col::TEXT, "uHound");
+    text(TEXT_M, x, y + s + 100.0f, col::MUTED, "Hound for the Wii U");
 }
 
 void drawLogin(const LoginModel& m) {
     drawScreenBackdrop();
     drawBrandPanel();
 
-    text(TEXT_L + 6, layout::LOGIN_X, 70.0f, col::TEXT, "Sign in to Jellyfin");
+    text(TEXT_L + 6, layout::LOGIN_X, 70.0f, col::TEXT, "Sign in to Hound");
 
     for (int i = 0; i < (int)m.rows.size(); i++) {
         const LoginField& f = m.rows[(size_t)i];

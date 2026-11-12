@@ -106,7 +106,7 @@ uint64_t createSnapshotTexture(const GX2ColorBuffer* src, bool asRenderTarget) {
     GX2InitTextureRegs(&img->Texture);
     GX2InitSampler(&img->Sampler, GX2_TEX_CLAMP_MODE_CLAMP, GX2_TEX_XY_FILTER_MODE_LINEAR);
     // If a copy misbehaves on real hardware, the first thing to compare is how the two
-    // surfaces are laid out; these lines end up in ufin_log.txt.
+    // surfaces are laid out; these lines end up in uhound_log.txt.
     const GX2Surface& sc = src->surface;
     OSReport("Ufin: glass snapshot src %ux%u pitch=%u fmt=0x%x tile=%d use=0x%x swizzle=0x%x align=%u size=%u\n", sc.width, sc.height,
              sc.pitch, (unsigned)sc.format, (int)sc.tileMode, (unsigned)sc.use, (unsigned)sc.swizzle, sc.alignment, sc.imageSize);

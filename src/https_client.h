@@ -8,7 +8,7 @@
 // bodies, redirects, size cap, deadline, cancel) is plain code that the host
 // tests run against a local server.
 //
-// Built with UFIN_TLS_NSSL (CMake defines it for the console) the system TLS is
+// Built with UHOUND_TLS_NSSL (CMake defines it for the console) the system TLS is
 // used; without it https_get() fails with "TLS not available" and only the
 // injectable core (https_get_with) works, which is what the host tests use.
 #pragma once

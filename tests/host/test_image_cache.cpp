@@ -8,6 +8,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "vendor/stb_image_write.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <set>

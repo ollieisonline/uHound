@@ -3,21 +3,21 @@
 
 #include <cstdio>
 
-bool isPlayableItem(const JellyfinItem& item) {
+bool isPlayableItem(const MediaItem& item) {
     return item.type == "Movie" || item.type == "Episode" || item.type == "Video" ||
            item.type == "MusicVideo" || item.type == "Audio" || item.type == "TvChannel";
 }
 
-bool isLiveTvView(const JellyfinItem& item) {
+bool isLiveTvView(const MediaItem& item) {
     return item.collectionType == "livetv";
 }
 
-bool isHomeRow(const JellyfinItem& item) {
+bool isHomeRow(const MediaItem& item) {
     return item.type == HOME_RESUME || item.type == HOME_NEXT_UP || item.type == HOME_FAVORITES;
 }
 
-JellyfinItem makeHomeRow(const char* type, int count) {
-    JellyfinItem i;
+MediaItem makeHomeRow(const char* type, int count) {
+    MediaItem i;
     i.type = type;
     i.id = type;
     i.childCount = count;
@@ -26,7 +26,7 @@ JellyfinItem makeHomeRow(const char* type, int count) {
     return i;
 }
 
-void applyUserState(const JellyfinItem& item, ui::ListEntry& e) {
+void applyUserState(const MediaItem& item, ui::ListEntry& e) {
     e.favorite = item.favorite;
     if (item.type == "Series" || item.type == "Season" || item.type == "BoxSet") {
         e.unplayed = item.unplayedCount > 0 ? item.unplayedCount : -1;
@@ -39,7 +39,7 @@ void applyUserState(const JellyfinItem& item, ui::ListEntry& e) {
     }
 }
 
-bool isShufflableContainer(const JellyfinItem& item) {
+bool isShufflableContainer(const MediaItem& item) {
     return item.type == "MusicAlbum" || item.type == "Playlist";
 }
 
@@ -56,16 +56,16 @@ static std::string libraryKind(const std::string& collectionType) {
     return "Library";
 }
 
-static bool isLibrary(const JellyfinItem& item) {
+static bool isLibrary(const MediaItem& item) {
     return item.type == "CollectionFolder" || item.type == "UserView";
 }
 
-static std::string duration(const JellyfinItem& item) {
+static std::string duration(const MediaItem& item) {
     if (item.runTimeTicks <= 0) return "";
     return ui::formatTime((double)item.runTimeTicks / 10000000.0);
 }
 
-static std::string episodeCode(const JellyfinItem& item) {
+static std::string episodeCode(const MediaItem& item) {
     char buf[32] = "";
     if (item.parentIndexNumber >= 0 && item.indexNumber >= 0) {
         snprintf(buf, sizeof(buf), "S%dE%d", item.parentIndexNumber, item.indexNumber);
@@ -87,7 +87,7 @@ static std::string joinDetail(const std::string& a, const std::string& b) {
     return a + "  -  " + b;
 }
 
-std::string itemDisplayName(const JellyfinItem& item) {
+std::string itemDisplayName(const MediaItem& item) {
     if (item.type == "TvChannel" && !item.channelNumber.empty()) {
         return item.channelNumber + "  " + item.name;
     }
@@ -97,7 +97,7 @@ std::string itemDisplayName(const JellyfinItem& item) {
     return item.name;
 }
 
-std::string itemTag(const JellyfinItem& item) {
+std::string itemTag(const MediaItem& item) {
     if (isHomeRow(item)) return item.childCount >= 0 ? std::to_string(item.childCount) : "";
     if (isLibrary(item)) return libraryKind(item.collectionType);
     if (item.type == "Movie" || item.type == "Video" || item.type == "MusicVideo") {
@@ -116,14 +116,14 @@ std::string itemTag(const JellyfinItem& item) {
     return item.type;
 }
 
-std::string itemDetail(const JellyfinItem& item) {
+std::string itemDetail(const MediaItem& item) {
     if (item.type == HOME_RESUME) return "Pick up where you left off";
     if (item.type == HOME_NEXT_UP) return "The next episode of the shows you're watching";
     if (item.type == HOME_FAVORITES) return "Everything you've marked with a heart (Y)";
     if (isLibrary(item)) return libraryKind(item.collectionType) + " library  -  A: open";
     if (isPlayableItem(item) && item.type != "TvChannel" && !item.played && item.positionTicks >= 600000000LL) {
         // Partly watched: say where it resumes.
-        JellyfinItem plain = item;
+        MediaItem plain = item;
         plain.positionTicks = 0;
         return "Resume at " + ui::formatTime((double)item.positionTicks / 10000000.0) + "  -  " + itemDetail(plain);
     }
@@ -147,7 +147,7 @@ std::string itemDetail(const JellyfinItem& item) {
     return joinDetail(item.name, itemTag(item));
 }
 
-ui::Icon itemIcon(const JellyfinItem& item) {
+ui::Icon itemIcon(const MediaItem& item) {
     if (item.type == HOME_RESUME) return ui::Icon::Resume;
     if (item.type == HOME_NEXT_UP) return ui::Icon::Series;
     if (item.type == HOME_FAVORITES) return ui::Icon::Heart;

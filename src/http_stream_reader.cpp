@@ -120,6 +120,22 @@ HttpStreamReader::~HttpStreamReader() {
     if (sock_ >= 0) close(sock_);
 }
 
+bool HttpStreamReader::reopenAt(int64_t byteOffset) {
+    if (sock_ >= 0) {
+        close(sock_);
+        sock_ = -1;
+    }
+    stream_ended_ = false;
+    cancelled_ = false;
+    fill_error_.clear();
+    last_error_.clear();
+    range_start_ = byteOffset > 0 ? byteOffset : 0;
+    // open() resets the header/chunk/buffer state; the startup timeout and
+    // abort check stay whatever the caller last set (a mid-file reopen hits
+    // a static file and answers fast, but the knobs belong to the caller).
+    return open();
+}
+
 bool HttpStreamReader::fillSockBuf() {
     if (sock_buf_pos_ < sock_buf_len_) return true; // still have unconsumed bytes
 
@@ -183,6 +199,20 @@ bool HttpStreamReader::readLine(std::string& outLine) {
 
 bool HttpStreamReader::open() {
     OSReport("Ufin: HttpStreamReader::open host=%s port=%d\n", host_.c_str(), port_);
+
+    // Fresh connection: reset everything a previous open/reopen may have
+    // left behind (reopenAt() relies on this).
+    is_chunked_ = false;
+    stream_ended_ = false;
+    chunk_remaining_ = 0;
+    need_chunk_header_ = true;
+    sock_buf_.clear();
+    sock_buf_pos_ = 0;
+    sock_buf_len_ = 0;
+    body_pos_ = 0;
+    accepts_ranges_ = false;
+    content_length_ = -1;
+
     {
         // The request path, with the access token blanked out -- shows
         // StartTimeTicks / PlaySessionId when diagnosing seeks.
@@ -227,13 +257,24 @@ bool HttpStreamReader::open() {
     // point of this class is to keep the connection open and keep
     // reading as Jellyfin generates more of the transcode.
     char request[4096];
-    snprintf(request, sizeof(request),
-        "GET %s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Accept: */*\r\n"
-        "Connection: keep-alive\r\n"
-        "\r\n",
-        path_.c_str(), host_.c_str());
+    if (range_start_ > 0) {
+        snprintf(request, sizeof(request),
+            "GET %s HTTP/1.1\r\n"
+            "Host: %s\r\n"
+            "Accept: */*\r\n"
+            "Range: bytes=%lld-\r\n"
+            "Connection: keep-alive\r\n"
+            "\r\n",
+            path_.c_str(), host_.c_str(), (long long)range_start_);
+    } else {
+        snprintf(request, sizeof(request),
+            "GET %s HTTP/1.1\r\n"
+            "Host: %s\r\n"
+            "Accept: */*\r\n"
+            "Connection: keep-alive\r\n"
+            "\r\n",
+            path_.c_str(), host_.c_str());
+    }
 
     std::string req(request);
     OSReport("Ufin: sending request, %zu bytes\n", req.size());
@@ -283,7 +324,8 @@ bool HttpStreamReader::open() {
 
     size_t sp1 = statusLine.find(' ');
     int statusCode = (sp1 != std::string::npos) ? atoi(statusLine.c_str() + sp1 + 1) : 0;
-    if (statusCode != 200) {
+    // 206 Partial Content is the normal answer to a Range request.
+    if (statusCode != 200 && statusCode != 206) {
         // Jellyfin usually says *why* in the body (e.g. the FFmpeg
         // failure), so grab the start of it for the log and the error
         // screen instead of throwing it away.
@@ -321,6 +363,12 @@ bool HttpStreamReader::open() {
         if (lower.rfind("transfer-encoding:", 0) == 0 && lower.find("chunked") != std::string::npos) {
             is_chunked_ = true;
         }
+        if (lower.rfind("accept-ranges:", 0) == 0 && lower.find("bytes") != std::string::npos) {
+            accepts_ranges_ = true;
+        }
+        if (lower.rfind("content-length:", 0) == 0) {
+            content_length_ = strtoll(headerLine.c_str() + strlen("content-length:"), nullptr, 10);
+        }
         if (lower.rfind("content-type:", 0) == 0) {
             size_t v = headerLine.find(':') + 1;
             while (v < headerLine.size() && headerLine[v] == ' ') v++;
@@ -348,6 +396,7 @@ int HttpStreamReader::read(uint8_t* buf, int len) {
         int toCopy = std::min(avail, len);
         memcpy(buf, sock_buf_.data() + sock_buf_pos_, toCopy);
         sock_buf_pos_ += toCopy;
+        body_pos_ += toCopy;
         return toCopy;
     }
 
@@ -385,6 +434,7 @@ int HttpStreamReader::read(uint8_t* buf, int len) {
                 return totalRead > 0 ? totalRead : -1;
             }
             totalRead += toRead;
+            body_pos_ += toRead;
             chunk_remaining_ -= toRead;
         }
 

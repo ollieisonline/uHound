@@ -57,7 +57,7 @@ public:
     // videoHeight()). displayAspect is the aspect ratio the picture
     // should be *shown* at -- normally width/height, but Jellyfin is
     // asked to encode everything at exactly 1280x720 (see
-    // JellyfinClient::buildVideoStreamUrl for why), so a 2.39:1 movie
+    // HoundClient::buildVideoStreamUrl for why), so a 2.39:1 movie
     // arrives squeezed into 16:9 and this is how it gets un-squeezed.
     // Pass <= 0 to use width/height.
     bool init(int width, int height, double displayAspect);

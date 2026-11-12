@@ -53,8 +53,8 @@ inline const char* controllerName(Controller c) {
 }
 
 // Where the models live. Cemu maps /vol/external01 to its sdcard folder, like the other assets.
-constexpr const char* kModelDir = "/vol/external01/wiiu/apps/ufin/assets/models/";
-constexpr const char* kModelDirShown = "assets/models/"; // what the Help window shows (inside sd:/wiiu/apps/ufin/)
+constexpr const char* kModelDir = "/vol/external01/wiiu/apps/uhound/assets/models/";
+constexpr const char* kModelDirShown = "assets/models/"; // what the Help window shows (inside sd:/wiiu/apps/uhound/)
 
 // File name (inside kModelDir) of a controller's model.
 inline const char* modelFile(Controller c) {
@@ -145,7 +145,7 @@ inline std::vector<Row> rowsFor(Controller c) {
     add("-", "GamePad screen on / off", MINUS);
 
     head("Anywhere");
-    add("HOME", "Back to the Wii U menu (Ufin keeps its place)", HOME);
+    add("HOME", "Back to the Wii U menu (uHound keeps its place)", HOME);
     return r;
 }
 

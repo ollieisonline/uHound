@@ -6,7 +6,7 @@
 // Why these three and nothing else: the Wii U hardware H.264 decoder writes
 // rows at a 256-pixel-aligned pitch and a 16-row-aligned height (see
 // media/h264_geometry.h and the long comment in
-// JellyfinClient::buildVideoStreamUrl). Jellyfin is asked for an EXACT size
+// HoundClient::buildVideoStreamUrl). Jellyfin is asked for an EXACT size
 // (it squeezes any picture to fit, and VideoOutput un-squeezes it at draw time
 // from the item's real aspect ratio), so the size must be chosen with that
 // alignment in mind:

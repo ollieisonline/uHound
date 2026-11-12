@@ -31,6 +31,16 @@ public:
     // own or free it.
     bool open(AVIOContext* avioCtx);
 
+    // Seeks the demuxer to a stream-time position in seconds. Only works
+    // when the input is seekable (avioCtx->seekable set -- see
+    // HttpStreamIO); the caller checks that. Drops everything queued from
+    // before the seek and resets both codecs, so the next readPacket() /
+    // decode call produces media from the new position. Call before any
+    // decoding has started (Player does, right after open()); false means
+    // the demuxer refused -- the caller can keep playing from wherever the
+    // input now sits.
+    bool seekTo(double seconds);
+
     // Diagnostic escape hatch for the h264_wiiu macroblock-alignment check
     // in openCodecForStream() -- see UfinConfig::allowUnalignedVideoGeometry
     // for the full explanation. Must be called before open(); has no effect

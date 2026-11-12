@@ -1,7 +1,7 @@
 // profiles.h -- the saved profiles behind the "Who's watching?" screen. Pure data and rules, no UI,
 // no Wii U includes, so the host tests can run it (tests/host/test_profiles.cpp).
 //
-// A profile is one saved Jellyfin sign-in: which server, which user, and the access token the app got
+// A profile is one saved Hound sign-in: which server, which user, and the access token the app got
 // when that user signed in. The password is never stored (only a token), exactly like the single
 // sign-in Ufin always had. Profiles live in config.json under "profiles" (see config_loader.cpp).
 #pragma once
@@ -11,10 +11,10 @@
 #include <vector>
 
 struct Profile {
-    std::string name;          // shown under the picture: the Jellyfin user name
+    std::string name;          // shown under the picture: the Hound user name
     std::string host;          // the server this profile signs in to
     int port = 0;
-    std::string userId;        // Jellyfin's id for the user (also names the user's picture on the server)
+    std::string userId;        // The Hound username (the sign-in id)
     std::string accessToken;   // the saved sign-in; empty = it expired, sign in again
     bool keepLoggedIn = false; // "Auto log in": sign in as this profile at start-up, without showing Who's watching
                                // (only one profile can have it; saved as "keep_logged_in" for older configs)
@@ -26,7 +26,7 @@ namespace profiles {
 constexpr size_t kMax = 5;     // profiles on the screen (plus the "Add profile" tile while there is room)
 constexpr int kColors = 8;     // avatar colours (see ui/profiles_ui.inc)
 
-// Index of the profile for this Jellyfin user (matched by user id, so a changed server address still
+// Index of the profile for this Hound user (matched by user id, so a changed server address still
 // finds it; a profile saved without an id is matched by name and server), or -1.
 inline int find(const std::vector<Profile>& list, const std::string& host, int port, const std::string& userId,
                 const std::string& name) {

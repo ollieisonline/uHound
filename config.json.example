@@ -1,6 +1,6 @@
 {
   "host": "192.168.1.43",
-  "port": 8096,
+  "port": 2323,
   "username": "your-user",
   "password": "your-password"
 }

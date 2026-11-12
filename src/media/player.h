@@ -42,7 +42,7 @@ struct PlayerCommand {
 struct PlayOptions {
     // Aspect ratio (width / height) the video should be displayed at.
     // <= 0 means "whatever the decoded frames are". See
-    // JellyfinClient::buildVideoStreamUrl for why this can differ from
+    // HoundClient::buildVideoStreamUrl for why this can differ from
     // the decoded frame dimensions.
     double displayAspect = 0.0;
 
@@ -118,7 +118,7 @@ struct PlayOptions {
 class Player {
 public:
     // host/port/path identify the media stream (see
-    // JellyfinClient::buildVideoStreamUrl / buildAudioStreamUrl for how
+    // HoundClient::buildVideoStreamUrl / buildAudioStreamUrl for how
     // these get built).
     //
     // shouldStop is polled many times per second; return true to abort

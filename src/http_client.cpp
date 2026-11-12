@@ -248,18 +248,22 @@ HttpResponse http_post(const std::string& host, int port, const std::string& pat
 }
 
 HttpResponse http_delete(const std::string& host, int port, const std::string& path,
-                          const std::string& extra_headers) {
+                          const std::string& extra_headers, const std::string& body,
+                          const std::string& content_type) {
     char header[4096];
     snprintf(header, sizeof(header),
         "DELETE %s HTTP/1.1\r\n"
         "Host: %s\r\n"
-        "Content-Length: 0\r\n"
+        "Content-Type: %s\r\n"
+        "Content-Length: %zu\r\n"
         "Accept: application/json\r\n"
         "Connection: close\r\n"
         "%s"
         "\r\n",
-        path.c_str(), host.c_str(), extra_headers.c_str());
-    return do_request(host, port, header);
+        path.c_str(), host.c_str(), content_type.c_str(), body.size(), extra_headers.c_str());
+    std::string request = header;
+    request += body;
+    return do_request(host, port, request);
 }
 
 bool http_open_stream(const std::string& host, int port, const std::string& path,

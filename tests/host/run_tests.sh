@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds and runs Ufin's host-side tests with the system g++ (no Wii U
 # toolchain needed). Everything that doesn't touch wut/GX2 is covered:
-# the ui/ screens, JellyfinClient + http_client, the config loader, and
+# the ui/ screens, HoundClient + http_client, the config loader, and
 # -- given a host build of FFmpeg -- FrameQueue, AudioOutput's clock, and
 # the real Decoder/HttpStreamIO/HttpStreamReader chain over HTTP.
 #
@@ -57,7 +57,7 @@ CXXFLAGS="$CXXFLAGS -I$IMGUI" LIBS="$OUT/libimgui.a" \
     "$SRC/ui/model3d.cpp" "$SRC/image_cache.cpp" "$SRC/vendor/cJSON.c"
 RUN_ARGS=""
 run test_config    "$HERE/test_config.cpp" "$SRC/config_loader.cpp" "$SRC/vendor/cJSON.c"
-run test_jellyfin  "$HERE/test_jellyfin.cpp" "$SRC/jellyfin_client.cpp" "$SRC/http_client.cpp" "$SRC/vendor/cJSON.c"
+run test_hound  "$HERE/test_hound.cpp" "$SRC/hound_client.cpp" "$SRC/http_client.cpp" "$SRC/https_client.cpp" "$SRC/vendor/cJSON.c"
 run test_image_cache "$HERE/test_image_cache.cpp" "$SRC/image_cache.cpp"
 run test_input_map "$HERE/test_input_map.cpp"
 RUN_ARGS="$HERE/../../patches/ffmpeg-wiiu-fixes.patch" run test_h264_geometry "$HERE/test_h264_geometry.cpp"
@@ -69,7 +69,7 @@ run test_h264_diag "$HERE/test_h264_diag.cpp"
 # the glue to the console's system TLS (NSSL) against a fake NSSL (the real TLS cannot run on a PC).
 run test_update_check "$HERE/test_update_check.cpp" "$SRC/update_check.cpp" "$SRC/vendor/cJSON.c"
 run test_https_client "$HERE/test_https_client.cpp" "$SRC/https_client.cpp" "$SRC/http_client.cpp"
-CXXFLAGS="$CXXFLAGS -DUFIN_TLS_NSSL" run test_https_nssl "$HERE/test_https_nssl.cpp" "$HERE/stubs/fake_nssl.cpp" "$SRC/https_client.cpp" "$SRC/http_client.cpp"
+CXXFLAGS="$CXXFLAGS -DUHOUND_TLS_NSSL" run test_https_nssl "$HERE/test_https_nssl.cpp" "$HERE/stubs/fake_nssl.cpp" "$SRC/https_client.cpp" "$SRC/http_client.cpp"
 if [ -x "$OUT/test_https_nssl" ]; then "$OUT/test_https_nssl" noroots || status=1; "$OUT/test_https_nssl" emulator || status=1; fi
 # The DNS client (packets + a fake UDP server), and our own TLS client (vendored Mbed TLS, compiled once into a
 # static library here) against a real `openssl s_server` with a throw-away CA.
@@ -85,7 +85,7 @@ if [ ! -f "$OUT/libmbedufin.a" ] || [ "$MBED/include/mbedtls/config.h" -nt "$OUT
     rm -f "$OUT/libmbedufin.a"; ar rcs "$OUT/libmbedufin.a" "$OUT"/mbed/*.o
 fi
 if command -v openssl >/dev/null 2>&1; then
-    CXXFLAGS="$CXXFLAGS -DUFIN_TLS_MBEDTLS -I$MBED/include" LIBS="$OUT/libmbedufin.a" \
+    CXXFLAGS="$CXXFLAGS -DUHOUND_TLS_MBEDTLS -I$MBED/include" LIBS="$OUT/libmbedufin.a" \
         run test_https_mbedtls "$HERE/test_https_mbedtls.cpp" "$SRC/https_client.cpp" "$SRC/http_client.cpp" "$SRC/dns_client.cpp" "$SRC/tls_roots.cpp"
 else
     echo "== test_https_mbedtls skipped (no openssl binary)"
@@ -168,7 +168,7 @@ if [ -n "${FFMPEG_HOST:-}" ] && [ -d "$FFMPEG_HOST/include/libavcodec" ]; then
                 CXXFLAGS="$CXXFLAGS -I$H -I$SRC/media" \
                     run test_player_burnin "$HERE/test_player_burnin.cpp" "$H/player.cpp" "$SRC/media/decoder.cpp" "$SRC/ufin_log.cpp" \
                     "$SRC/media/audio_output.cpp" "$SRC/media/http_stream_io.cpp" "$SRC/http_stream_reader.cpp" \
-                    "$SRC/jellyfin_client.cpp" "$SRC/http_client.cpp" "$SRC/vendor/cJSON.c" "$HERE/stubs/fake_sdl.cpp"
+                    "$SRC/hound_client.cpp" "$SRC/http_client.cpp" "$SRC/vendor/cJSON.c" "$HERE/stubs/fake_sdl.cpp"
                 RUN_ARGS=""
             fi
             # Graceful rebuffering: the real Player against a fake Jellyfin whose

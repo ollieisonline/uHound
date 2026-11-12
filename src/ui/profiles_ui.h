@@ -23,7 +23,7 @@ struct ProfileTile {
     bool loggedOut = false;    // no saved sign-in (the "Log out" button is dimmed)
     uint32_t color = 0x00A4DC; // 0xRRGGBB of the letter avatar
     std::string letter;        // shown on the avatar when there is no picture
-    Texture picture = 0;       // the user's Jellyfin picture (a round crop is drawn); 0 = letter avatar
+    Texture picture = 0;       // the user's picture (a round crop is drawn); 0 = letter avatar
     float pictureAspect = 1.0f;
     BounceShape bounce;        // this frame's squash/stretch (still unless this is the hovered tile)
 };

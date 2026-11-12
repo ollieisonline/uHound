@@ -45,7 +45,7 @@ bool Decoder::openCodecForStream(int streamIndex, AVCodecContext** outCtx) {
 
     // Safety gate for the Wii U hardware decoder specifically (see the
     // long comment on Width=1280&Height=720 in
-    // JellyfinClient::buildVideoStreamUrl): h264_wiiu's framebuffer
+    // HoundClient::buildVideoStreamUrl): h264_wiiu's framebuffer
     // allocation is width*height*1.5 with NO internal rounding, while the
     // hardware itself writes rows at a 256-pixel-aligned pitch and a
     // 16-row-aligned height. Ufin always *asks* Jellyfin for exactly
@@ -231,6 +231,37 @@ bool Decoder::open(AVIOContext* avioCtx) {
         }
     }
 
+    return true;
+}
+
+bool Decoder::seekTo(double seconds) {
+    if (!fmt_ctx_) return false;
+    if (seconds < 0.0) seconds = 0.0;
+    const int64_t ts = (int64_t)(seconds * (double)AV_TIME_BASE);
+    if (avformat_seek_file(fmt_ctx_, -1, INT64_MIN, ts, ts, 0) < 0) {
+        OSReport("Ufin: avformat_seek_file to %.1fs failed\n", seconds);
+        return false;
+    }
+    OSReport("Ufin: demuxer seeked to %.1fs\n", seconds);
+
+    // Drop anything queued from before the seek and start the codecs
+    // fresh, mirroring close()'s reset without tearing the streams down.
+    if (packet_) av_packet_unref(packet_);
+    for (AVPacket* p : video_packets_) av_packet_free(&p);
+    for (AVPacket* p : audio_packets_) av_packet_free(&p);
+    video_packets_.clear();
+    audio_packets_.clear();
+    queued_packet_bytes_ = 0;
+    queued_video_seconds_ = 0.0;
+    queued_audio_seconds_ = 0.0;
+    video_span_ = QueueSpan();
+    audio_span_ = QueueSpan();
+    publishQueueStats();
+    video_drained_ = audio_drained_ = false;
+    video_flushed_ = audio_flushed_ = false;
+    if (video_ctx_) avcodec_flush_buffers(video_ctx_);
+    if (audio_ctx_) avcodec_flush_buffers(audio_ctx_);
+    reachedEof_.store(false, std::memory_order_release);
     return true;
 }
 

@@ -1,5 +1,5 @@
 // UTF-16 -> UTF-8, for text coming back from the Wii U software keyboard
-// (nn::swkbd hands out char16_t strings; Jellyfin wants UTF-8).
+// (nn::swkbd hands out char16_t strings; the server wants UTF-8).
 #pragma once
 #include <cstddef>
 #include <cstdint>

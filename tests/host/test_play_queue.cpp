@@ -7,10 +7,10 @@
 #include <algorithm>
 #include <set>
 
-static std::vector<JellyfinItem> tracks(int n) {
-    std::vector<JellyfinItem> v;
+static std::vector<MediaItem> tracks(int n) {
+    std::vector<MediaItem> v;
     for (int i = 0; i < n; i++) {
-        JellyfinItem it;
+        MediaItem it;
         it.id = "t" + std::to_string(i);
         it.name = "Track " + std::to_string(i);
         it.type = "Audio";
@@ -114,7 +114,7 @@ int main() {
         q.setRepeat(PlayQueue::Repeat::All);
         for (int i = 0; i < 5; i++) CHECK(q.next());
         const std::string last = q.current().id;
-        const JellyfinItem* peek = q.peekNext();
+        const MediaItem* peek = q.peekNext();
         CHECK(peek != nullptr);
         const std::string promised = peek->id;
         CHECK(promised != last);
@@ -169,12 +169,12 @@ int main() {
 
     // audioTracks: only Audio items, start index follows the selection.
     {
-        std::vector<JellyfinItem> list = tracks(3);
-        JellyfinItem folder;
+        std::vector<MediaItem> list = tracks(3);
+        MediaItem folder;
         folder.type = "MusicAlbum";
         list.insert(list.begin() + 1, folder); // t0, album, t1, t2
         size_t start = 99;
-        std::vector<JellyfinItem> t = audioTracks(list, 3, start);
+        std::vector<MediaItem> t = audioTracks(list, 3, start);
         CHECK_EQ((int)t.size(), 3);
         CHECK_EQ((int)start, 2);
         CHECK_STR(t[start].id, "t2");

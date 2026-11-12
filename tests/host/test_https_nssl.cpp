@@ -1,5 +1,5 @@
 // The glue between https_client and the console's system TLS (NSSL), built with
-// UFIN_TLS_NSSL against a fake NSSL that passes bytes through a plain socket.
+// UHOUND_TLS_NSSL against a fake NSSL that passes bytes through a plain socket.
 // This does NOT test TLS itself -- certificates, ciphers and the handshake are the
 // console's -- only that Ufin drives the NSSL API sensibly: roots added, the host
 // name passed for the certificate check, WANT_READ / WANT_WRITE retried, partial

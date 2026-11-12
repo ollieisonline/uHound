@@ -13,7 +13,7 @@
 #include <unistd.h>
 #include <vector>
 
-#if defined(UFIN_TLS_MBEDTLS)
+#if defined(UHOUND_TLS_MBEDTLS)
 #include "dns_client.h"
 #include "tls_roots.h"
 #include <mbedtls/ctr_drbg.h>
@@ -27,7 +27,7 @@
 #include <mutex>
 #include <string.h>
 #include <time.h>
-#elif defined(UFIN_TLS_NSSL)
+#elif defined(UHOUND_TLS_NSSL)
 #include <nsysnet/nssl.h>
 #include <mutex>
 #endif
@@ -259,7 +259,7 @@ Response get(const std::string& host, const std::string& path, const std::string
 
 // ---- system TLS (the console's NSSL) ---------------------------------------
 
-#if defined(UFIN_TLS_MBEDTLS)
+#if defined(UHOUND_TLS_MBEDTLS)
 
 // ---- our own TLS (Mbed TLS, vendored in src/vendor/mbedtls) ---------------------------------------
 //
@@ -468,7 +468,7 @@ Opener systemOpener() {
     };
 }
 
-#elif defined(UFIN_TLS_NSSL)
+#elif defined(UHOUND_TLS_NSSL)
 
 namespace {
 

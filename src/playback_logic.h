@@ -2,7 +2,7 @@
 // "Resume", which episode comes next, and stepping through audio /
 // subtitle tracks. Host-tested (tests/host/test_playback_logic.cpp).
 #pragma once
-#include "jellyfin_client.h"
+#include "hound_client.h"
 
 #include <string>
 #include <vector>
@@ -10,7 +10,7 @@
 // Offer "Resume from ..." when the user stopped more than a minute in and
 // not at the very end (Jellyfin clears the position once it counts an
 // item as watched).
-inline bool shouldOfferResume(const JellyfinItem& item) {
+inline bool shouldOfferResume(const MediaItem& item) {
     const int64_t minute = 60LL * 10000000LL;
     if (item.positionTicks < minute) return false;
     if (item.runTimeTicks > 0 && item.positionTicks > item.runTimeTicks - 2 * minute) return false;
@@ -19,7 +19,7 @@ inline bool shouldOfferResume(const JellyfinItem& item) {
 
 // The episode after `currentId` in a show's episode list (all seasons, in
 // order), or nullptr at the end / if it isn't in the list.
-inline const JellyfinItem* findNextEpisode(const std::vector<JellyfinItem>& episodes, const std::string& currentId) {
+inline const MediaItem* findNextEpisode(const std::vector<MediaItem>& episodes, const std::string& currentId) {
     for (size_t i = 0; i < episodes.size(); i++) {
         if (episodes[i].id != currentId) continue;
         for (size_t j = i + 1; j < episodes.size(); j++) {

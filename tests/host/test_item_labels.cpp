@@ -3,8 +3,8 @@
 #include "check.h"
 #include "item_labels.h"
 
-static JellyfinItem make(const std::string& type) {
-    JellyfinItem i;
+static MediaItem make(const std::string& type) {
+    MediaItem i;
     i.id = "x";
     i.name = "Name";
     i.type = type;
@@ -12,25 +12,25 @@ static JellyfinItem make(const std::string& type) {
 }
 
 int main() {
-    JellyfinItem lib = make("CollectionFolder");
+    MediaItem lib = make("CollectionFolder");
     lib.collectionType = "movies";
     CHECK_STR(itemTag(lib), "Movies");
     CHECK(!isPlayableItem(lib));
     CHECK(!isLiveTvView(lib));
 
-    JellyfinItem live = make("UserView");
+    MediaItem live = make("UserView");
     live.collectionType = "livetv";
     CHECK(isLiveTvView(live));
     CHECK_STR(itemTag(live), "Live TV");
 
-    JellyfinItem movie = make("Movie");
+    MediaItem movie = make("Movie");
     movie.productionYear = 2008;
     movie.runTimeTicks = 6720LL * 10000000LL; // 1:52:00
     CHECK(isPlayableItem(movie));
     CHECK_STR(itemTag(movie), "2008  1:52:00");
     CHECK_STR(itemDetail(movie), "Name  -  2008  -  1:52:00");
 
-    JellyfinItem ep = make("Episode");
+    MediaItem ep = make("Episode");
     ep.parentIndexNumber = 2;
     ep.indexNumber = 5;
     ep.runTimeTicks = 2520LL * 10000000LL; // 42:00
@@ -40,7 +40,7 @@ int main() {
     ep.seriesName = "Lost";
     CHECK(itemDetail(ep).find("Lost: Name") == 0); // search results mix shows
 
-    JellyfinItem ch = make("TvChannel");
+    MediaItem ch = make("TvChannel");
     ch.channelNumber = "5";
     ch.currentProgram = "News";
     CHECK(isPlayableItem(ch));
@@ -50,7 +50,7 @@ int main() {
     ch.currentProgram.clear();
     CHECK(itemDetail(ch).find("Live channel") == 0);
 
-    JellyfinItem track = make("Audio");
+    MediaItem track = make("Audio");
     track.indexNumber = 3;
     track.runTimeTicks = 185LL * 10000000LL;
     CHECK_STR(itemDisplayName(track), "3. Name");
@@ -73,7 +73,7 @@ int main() {
     CHECK(itemIcon(make("Folder")) == ui::Icon::Folder);
 
     // Home rows.
-    JellyfinItem row = makeHomeRow(HOME_RESUME, 3);
+    MediaItem row = makeHomeRow(HOME_RESUME, 3);
     CHECK(isHomeRow(row));
     CHECK_STR(row.name, "Continue watching");
     CHECK_STR(itemTag(row), "3");
@@ -84,7 +84,7 @@ int main() {
     CHECK(!isHomeRow(movie));
 
     // Resume detail + user state on list rows.
-    JellyfinItem part = make("Movie");
+    MediaItem part = make("Movie");
     part.runTimeTicks = 6000LL * 10000000LL;
     part.positionTicks = 754LL * 10000000LL; // 12:34
     part.favorite = true;
@@ -100,7 +100,7 @@ int main() {
     CHECK(le2.watched);
     CHECK(le2.progress == 0.0f);
     CHECK(itemDetail(part).find("Resume") == std::string::npos); // watched: no resume line
-    JellyfinItem show = make("Series");
+    MediaItem show = make("Series");
     show.unplayedCount = 5;
     ui::ListEntry le3;
     applyUserState(show, le3);

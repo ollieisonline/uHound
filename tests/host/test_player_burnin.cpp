@@ -1,5 +1,5 @@
 // End-to-end test for subtitles burned in at a start offset (seeking, changing
-// the subtitle track mid-episode, resuming): Ufin's real JellyfinClient URL
+// the subtitle track mid-episode, resuming): Ufin's real HoundClient URL
 // builder and real Player against a fake Jellyfin that transcodes with ffmpeg
 // the way Jellyfin's progressive burn-in does.
 //
@@ -28,7 +28,7 @@
 //   * offset 0 and no-subtitle requests are unchanged.
 #include "check.h"
 #include "fake_http_server.h"
-#include "jellyfin_client.h"
+#include "hound_client.h"
 #include "media/player.h"
 #include "seek.h"
 #include "video_output.h" // tests/host/fake_media
@@ -180,7 +180,7 @@ int main(int argc, char** argv) {
         return !body.empty();
     });
 
-    JellyfinClient client("127.0.0.1", server.port());
+    HoundClient client("127.0.0.1", server.port());
     const double startAt = 20.0;
 
     VideoStreamOptions o;

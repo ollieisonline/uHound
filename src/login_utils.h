@@ -7,7 +7,7 @@
 
 // What people type as a server address -> host + port.
 // Accepts "192.168.1.100", "192.168.1.100:8096", "http://jelly.local:8096/",
-// "jelly.local/web/index.html" ... Default port 8096 (Jellyfin's). https
+// "hound.local/web/index.html" ... Default port 2323 (Hound's). https
 // isn't supported (no TLS), so it's rejected with a clear reason.
 inline bool parseServerAddress(const std::string& text, std::string& host, int& port, std::string& error) {
     std::string s = text;
@@ -17,13 +17,13 @@ inline bool parseServerAddress(const std::string& text, std::string& host, int& 
     std::string lower;
     for (char c : s) lower += (char)tolower((unsigned char)c);
     if (lower.rfind("https://", 0) == 0) {
-        error = "https isn't supported -- use the server's http address (usually port 8096)";
+        error = "https isn't supported -- use the server's http address (usually port 2323)";
         return false;
     }
     if (lower.rfind("http://", 0) == 0) s = s.substr(7);
     size_t slash = s.find('/');
     if (slash != std::string::npos) s = s.substr(0, slash);
-    port = 8096;
+    port = 2323;
     size_t colon = s.rfind(':');
     if (colon != std::string::npos) {
         std::string p = s.substr(colon + 1);
@@ -54,5 +54,5 @@ inline bool parseServerAddress(const std::string& text, std::string& host, int& 
 
 inline std::string formatServerAddress(const std::string& host, int port) {
     if (host.empty()) return "";
-    return port == 8096 || port <= 0 ? host : host + ":" + std::to_string(port);
+    return port == 2323 || port <= 0 ? host : host + ":" + std::to_string(port);
 }
