@@ -1,5 +1,7 @@
 #include "http_stream_io.h"
 
+#include <cstdio>
+
 HttpStreamIO::HttpStreamIO(std::string host, int port, std::string path)
     : reader_(std::move(host), port, std::move(path)) {}
 
@@ -36,9 +38,10 @@ bool HttpStreamIO::open() {
         return false;
     }
 
-    // See the header comment: this is a genuinely non-seekable live
-    // stream, not a workaround.
-    avio_ctx_->seekable = 0;
+    // See the header comment: seekability follows the server. A live
+    // chunked transcode stays non-seekable; a whole-file endpoint with
+    // "Accept-Ranges: bytes" gets a real seekable input.
+    avio_ctx_->seekable = reader_.seekable() ? AVIO_SEEKABLE_NORMAL : 0;
 
     return true;
 }
@@ -51,11 +54,34 @@ int HttpStreamIO::readPacket(uint8_t* buf, int bufSize) {
 }
 
 int64_t HttpStreamIO::seek(int64_t offset, int whence) {
-    // Not supported -- see header comment. Returning -1 tells FFmpeg
-    // "can't do this," including for AVSEEK_SIZE (we genuinely don't
-    // know the total size either, since there's no Content-Length on a
-    // chunked live-transcode response).
-    return -1;
+    // Non-seekable stream (Jellyfin's chunked live transcode): returning
+    // -1 tells FFmpeg "can't do this," including for AVSEEK_SIZE (there's
+    // no Content-Length to size against either).
+    if (!reader_.seekable()) return -1;
+
+    if (whence == AVSEEK_SIZE) return reader_.contentLength();
+
+    int64_t target;
+    if (whence == SEEK_SET) {
+        target = offset;
+    } else if (whence == SEEK_CUR) {
+        target = reader_.position() + offset;
+    } else if (whence == SEEK_END) {
+        target = reader_.contentLength() + offset;
+    } else {
+        return -1;
+    }
+    if (target < 0) target = 0;
+
+    // Offsets are in the file's own terms: the first open() always starts
+    // at byte 0, and every reopen re-anchors the view there, so an
+    // absolute target maps straight onto a Range request.
+    if (target == reader_.position()) return target;
+    if (!reader_.reopenAt(target)) {
+        last_error_ = "seek to byte " + std::to_string(target) + " failed: " + reader_.lastError();
+        return -1;
+    }
+    return target;
 }
 
 int HttpStreamIO::readPacketTrampoline(void* opaque, uint8_t* buf, int bufSize) {

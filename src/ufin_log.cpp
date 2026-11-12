@@ -7,7 +7,7 @@
 
 // Same SD mount convention already used by config_loader.cpp.
 #ifndef UFIN_LOG_PATH // overridden by the host test
-#define UFIN_LOG_PATH "/vol/external01/wiiu/apps/ufin/ufin_log.txt"
+#define UFIN_LOG_PATH "/vol/external01/wiiu/apps/uhound/uhound_log.txt"
 #endif
 static const char* LOG_PATH = UFIN_LOG_PATH;
 

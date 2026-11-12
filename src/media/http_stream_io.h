@@ -1,15 +1,18 @@
 // HttpStreamIO -- bridges FFmpeg's AVIOContext (how libavformat reads
-// input data) to HttpStreamReader, making a live, non-seekable HTTP
-// stream look like a file to FFmpeg.
+// input data) to HttpStreamReader, making an HTTP stream look like a
+// file to FFmpeg.
 //
-// Non-seekable is a real, deliberate constraint here, not a limitation
-// we're working around: Jellyfin's transcode endpoint returns
-// "Accept-Ranges: none" and streams the response as an indefinite
+// Seekability follows the server, honestly: a Jellyfin transcode
+// endpoint returns "Accept-Ranges: none" and streams an indefinite
 // "Transfer-Encoding: chunked" body (confirmed via curl) since the video
-// is being generated live as it's watched -- there is no fixed byte
-// range to seek within. FFmpeg handles non-seekable inputs fine (same
-// code path as e.g. a live broadcast), so this is surfaced honestly via
-// avio_ctx_->seekable = 0 rather than pretending to support seeking.
+// is generated live as it's watched -- there is no fixed byte range to
+// seek within, so the input is surfaced as non-seekable (same handling
+// FFmpeg already has for e.g. live broadcasts). A server that serves
+// whole files -- Hound's /stream endpoint, "Accept-Ranges: bytes" plus a
+// Content-Length -- gets a genuinely seekable input: the seek callback
+// restarts the GET at the new byte offset via HttpStreamReader::reopenAt,
+// which also lets FFmpeg read an MP4's moov box from the end of the file
+// instead of relying on it being up front.
 
 #pragma once
 #include <cstdint>
@@ -43,6 +46,11 @@ public:
     // (along with setting AVFMT_FLAG_CUSTOM_IO). Owned by this class --
     // do not free it yourself, it's cleaned up in the destructor.
     AVIOContext* avioContext() const { return avio_ctx_; }
+
+    // Whether the underlying stream is byte-range seekable (the server
+    // said "Accept-Ranges: bytes" and gave a Content-Length). Only
+    // meaningful after open(); when true, Player can seek the demuxer.
+    bool inputSeekable() const { return reader_.seekable(); }
 
     const std::string& lastError() const { return last_error_; }
 

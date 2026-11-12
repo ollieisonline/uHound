@@ -153,6 +153,21 @@ PlayResult Player::play(const std::string& host, int port, const std::string& pa
         return PlayResult::Error;
     }
 
+    // A seekable input (Hound serves whole files with byte ranges) can
+    // start at the requested offset directly; a Jellyfin transcode can't
+    // and instead gets restarted by the caller with StartTimeTicks baked
+    // into the URL, so startOffsetSeconds is 0 there and this does nothing.
+    // With original timestamps kept in the file, itemPositionFromStreamTime
+    // below already maps stream time straight onto item position.
+    if (options.startOffsetSeconds > 0.0 && io.inputSeekable()) {
+        if (decoder.seekTo(options.startOffsetSeconds)) {
+            OSReport("Ufin: input seeked to the requested start %.1fs\n", options.startOffsetSeconds);
+        } else {
+            OSReport("Ufin: seek to the requested start %.1fs failed -- playing from the top\n",
+                     options.startOffsetSeconds);
+        }
+    }
+
     OSReport("Ufin: player.cpp built %s %s (H.264 reorder + diagnostics)\n", __DATE__, __TIME__);
     OSReport("Ufin: Player -- video=%d (%s %dx%d) audio=%d (%d Hz, %d ch)\n", hasVideo,
              decoder.videoCodecName(), decoder.videoWidth(), decoder.videoHeight(), hasAudio,

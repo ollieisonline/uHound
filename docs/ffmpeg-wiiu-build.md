@@ -12,6 +12,7 @@ rebuild and install FFmpeg and then re-link Ufin.** Editing the FFmpeg source al
 | Framebuffer sized from the raw (possibly cropped) height, not the hardware's 256-pixel pitch / 16-row-aligned height | Heap overflow / crash on non-16:9 video (e.g. 1280x536) | the alignment fix in `h264_wiiu.c` |
 | `libavformat/os_support.c` defines its own `inet_aton`, which clashes with wut's | Build error "static declaration of 'inet_aton' follows non-static declaration" with current GCC | `#if !HAVE_INET_ATON && !defined(__WIIU__)` |
 | The FFmpeg build has no MP3 demuxer, so a local `bgm.mp3` cannot be opened (a `bgm.m4a` works without any patch) | `bgm.mp3` is skipped with a log line "can't play ... an MP3 needs an FFmpeg build with the mp3 demuxer" | `configure-wiiu`: `--enable-demuxer=mov,h264,mp3` and `--enable-parser=mpegaudio` (`ffmpeg-wiiu-mp3-demuxer.patch`) |
+| The FFmpeg build has no matroska demuxer, so Hound's torrent streams (almost always MKV) can't even be probed | Playback fails with "the file's container isn't supported by this FFmpeg build" / FFmpeg "Invalid data found" | `configure-wiiu`: `--enable-demuxer=mov,h264,mp3,matroska,avi` and `--enable-decoder=mpeg4,h264_wiiu,aac,ac3,mp3,eac3,dca,flac,opus` (`ffmpeg-wiiu-mkv.patch`) |
 | `h264_wiiu_decode_frame()` honoured `H264DECCheckSkipableFrame()` on every packet | **Main/High play at half frame rate**: the hardware reports non-reference pictures (the non-reference B-frames) as skippable, so they were silently dropped (24 fps film came out of the decoder at 12 fps). Baseline has no such pictures, so it was never affected | the check now only runs when `skip_frame >= AVDISCARD_NONREF` (Ufin never sets it), so every picture is decoded and returned |
 
 Ufin's player separately puts B-frame pictures back into display order
@@ -28,9 +29,20 @@ All in `patches/`:
 - `ffmpeg-wiiu-all-fixes.patch` -- **start here for a fresh clone.** Alignment fix + `inet_aton`
   fix + skip fix in one `git apply`. Checked to apply cleanly to the upstream commit the fork was
   based on; not tested against newer upstream commits.
+- `ffmpeg-wiiu-mkv.patch` -- **needed for Hound streams**: adds the matroska (MKV/WebM) and AVI
+  demuxers plus the E-AC3, DTS, FLAC and Opus decoders (and the MP3 demuxer/parser, superseding
+  `ffmpeg-wiiu-mp3-demuxer.patch`). Hound proxies files as they are and torrent releases are almost
+  always MKV. It changes the configure options, so a **full reconfigure and rebuild** is required, not
+  just `make`: `patch -p1 < .../ffmpeg-wiiu-mkv.patch && make clean && ./configure-wiiu && make -j$(nproc) && make install`,
+  then delete `build/ufin.rpx` and rebuild Ufin as in step 4. It applies to a pristine `configure-wiiu`
+  (or one with only `ffmpeg-wiiu-all-fixes.patch` applied); if your tree already has the mp3 patch, apply
+  the same two changes by hand -- set the decoder line to
+  `--enable-decoder=mpeg4,h264_wiiu,aac,ac3,mp3,eac3,dca,flac,opus` and the demuxer line to
+  `--enable-demuxer=mov,h264,mp3,matroska,avi`.
 - `ffmpeg-wiiu-mp3-demuxer.patch` -- adds the MP3 demuxer and `mpegaudio` parser to `configure-wiiu`
-  (only needed for a local `bgm.mp3` menu music; use `bgm.m4a` instead and you can skip it). It changes the
-  configure options, so a **full reconfigure and rebuild** is required, not just `make`:
+  (only needed for a local `bgm.mp3` menu music; use `bgm.m4a` instead and you can skip it). Superseded
+  by `ffmpeg-wiiu-mkv.patch`, which includes the same change. It changes the configure options, so a
+  **full reconfigure and rebuild** is required, not just `make`:
   `patch -p1 < .../ffmpeg-wiiu-mp3-demuxer.patch && make clean && ./configure-wiiu && make -j$(nproc) && make install`,
   then delete `build/ufin.rpx` and rebuild Ufin as in step 4.
 - `ffmpeg-wiiu-no-nonref-skip.patch` -- only the skip fix, for a checkout that already has the

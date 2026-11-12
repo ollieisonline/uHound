@@ -15,10 +15,15 @@
 // This class instead keeps one connection open and hands back decoded
 // chunk data as it arrives, blocking on the socket only as long as it
 // takes for the next piece of data to show up -- which is what actual
-// streaming playback needs. Tradeoff: no seeking, since a live chunked
-// stream has no random access -- see media/http_stream_io.h for how
-// that's surfaced to FFmpeg (as a non-seekable input, same handling
-// FFmpeg already has for e.g. live broadcasts).
+// streaming playback needs.
+//
+// Seeking: a Jellyfin live transcode has none (indefinite chunked body,
+// no ranges). A server that serves whole files -- Hound's /stream
+// endpoint, with "Accept-Ranges: bytes" and a Content-Length -- gets
+// real byte-range seeking: reopenAt() drops the connection and issues a
+// fresh GET with a new Range header, and seekable() reports whether the
+// last open() saw a server willing to do that. media/http_stream_io.h
+// is what surfaces either case to FFmpeg.
 
 #pragma once
 #include <cstdint>
@@ -30,7 +35,10 @@ class HttpStreamReader {
 public:
     // How long any single wait for the server's next bytes may last. Also
     // the default for the very first response bytes (setStartupTimeoutSeconds).
-    static const int DEFAULT_TIMEOUT_SECONDS = 15;
+    // Hound's P2P streams deliver in pieces as the torrent downloads, so a
+    // stall of tens of seconds mid-playback is normal rather than dead --
+    // the wait gives the next piece time to arrive before giving up.
+    static const int DEFAULT_TIMEOUT_SECONDS = 30;
 
     HttpStreamReader(std::string host, int port, std::string path);
     ~HttpStreamReader();
@@ -52,11 +60,26 @@ public:
     bool cancelled() const { return cancelled_; }
 
     // Opens the connection, sends the GET request, and parses the
-    // response status line + headers. Must return true (and see a 200)
-    // before read() is usable. On failure lastError() says which stage
-    // failed and why (timed out, connection closed, recv error, cancelled),
-    // not just the stage.
+    // response status line + headers. Must return true (and see a 200,
+    // or 206 when a Range was requested) before read() is usable. On
+    // failure lastError() says which stage failed and why (timed out,
+    // connection closed, recv error, cancelled), not just the stage.
     bool open();
+
+    // Byte-offset restart for range-serving servers. Must be called before
+    // open(); open() then sends "Range: bytes=N-" and accepts a 206.
+    void setRangeStart(int64_t byteOffset) { range_start_ = byteOffset > 0 ? byteOffset : 0; }
+    // True when the last open() saw "Accept-Ranges: bytes" plus a
+    // Content-Length -- i.e. reopenAt() can work. False for a chunked
+    // live transcode.
+    bool seekable() const { return accepts_ranges_ && content_length_ > 0; }
+    int64_t contentLength() const { return content_length_; }
+    // Body bytes delivered so far in full-file terms (range start + read).
+    int64_t position() const { return range_start_ + body_pos_; }
+    // Closes the connection and reopens it at a new byte offset (a fresh
+    // GET with "Range: bytes=N-"). Returns false (with lastError()) if the
+    // reopen fails; the reader is then closed and must not be read from.
+    bool reopenAt(int64_t byteOffset);
 
     // Reads up to `len` bytes of decoded body data into buf, blocking on
     // the socket as needed for more data to arrive. Returns the number
@@ -76,6 +99,12 @@ private:
 
     bool is_chunked_ = false;
     bool stream_ended_ = false;
+
+    // Range support state (see seekable()/reopenAt() above).
+    int64_t range_start_ = 0;
+    bool accepts_ranges_ = false;
+    int64_t content_length_ = -1;
+    int64_t body_pos_ = 0;
 
     // Chunked-decoding state: bytes remaining in the chunk currently
     // being consumed, and whether we're at a boundary needing to read a

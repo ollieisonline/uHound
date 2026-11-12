@@ -13,8 +13,8 @@ extern "C" {
 // Where the default menu music lives (Cemu maps /vol/external01 to its sdcard folder). Tried in
 // order. .m4a (AAC in MP4) works with the stock FFmpeg build; .mp3 only with one that has the
 // mp3 demuxer and mpegaudio parser (patches/ffmpeg-wiiu-mp3-demuxer.patch).
-constexpr const char* kMenuMusicLocalPaths[] = {"/vol/external01/wiiu/apps/ufin/assets/bgm.m4a",
-                                                "/vol/external01/wiiu/apps/ufin/assets/bgm.mp3"};
+constexpr const char* kMenuMusicLocalPaths[] = {"/vol/external01/wiiu/apps/uhound/assets/bgm.m4a",
+                                                "/vol/external01/wiiu/apps/uhound/assets/bgm.mp3"};
 
 // True if `path` can be opened for reading. Cheap enough to call once per decision, not per frame.
 bool fileReadable(const std::string& path);

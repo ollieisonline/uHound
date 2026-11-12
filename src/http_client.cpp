@@ -13,6 +13,7 @@
 #include <cctype>
 #include <fcntl.h>
 #include <cerrno>
+#include <functional>
 
 // NOTE: this whole file assumes wut's socket layer behaves like standard
 // BSD sockets (it's meant to). If any of socket()/connect()/send()/recv()
@@ -215,51 +216,121 @@ static HttpResponse do_request(const std::string& host, int port, const std::str
     return resp;
 }
 
+// Value of one header out of the lowercased raw header block, or "".
+static std::string header_value(const std::string& headers, const char* name) {
+    std::string key = std::string("\n") + name + ":";
+    size_t pos = headers.find(key);
+    if (pos == std::string::npos) return "";
+    pos += key.size();
+    while (pos < headers.size() && headers[pos] == ' ') pos++;
+    size_t end = headers.find('\r', pos);
+    if (end == std::string::npos) end = headers.size();
+    return headers.substr(pos, end - pos);
+}
+
+// Sends a request (built by `build` for a given path + Host value) and
+// follows 301/302/307/308 redirects, up to four hops. A redirect to
+// https:// can't be followed here (no TLS in this client) and comes back
+// as a clear error instead of a confusing HTML parse failure.
+static HttpResponse request_with_redirects(
+    const std::string& host, int port, const std::string& path,
+    const std::function<std::string(const std::string& path, const std::string& host)>& build) {
+    std::string curHost = host;
+    int curPort = port;
+    std::string curPath = path.empty() ? "/" : path;
+    HttpResponse resp;
+    for (int hop = 0; hop < 4; ++hop) {
+        resp = do_request(curHost, curPort, build(curPath, curHost));
+        if (resp.status_code != 301 && resp.status_code != 302 &&
+            resp.status_code != 307 && resp.status_code != 308) {
+            return resp;
+        }
+        std::string loc = header_value(resp.raw_headers, "location");
+        if (loc.empty()) return resp;
+        if (loc.rfind("https://", 0) == 0) {
+            HttpResponse err;
+            err.status_code = 0;
+            err.body = "the server redirected to https, which this app can't use -- give it the server's http:// address";
+            return err;
+        }
+        if (loc.rfind("http://", 0) == 0) {
+            std::string rest = loc.substr(7);
+            size_t slash = rest.find('/');
+            std::string hostport = slash == std::string::npos ? rest : rest.substr(0, slash);
+            curPath = slash == std::string::npos ? "/" : rest.substr(slash);
+            size_t colon = hostport.rfind(':');
+            if (colon != std::string::npos) {
+                curHost = hostport.substr(0, colon);
+                curPort = atoi(hostport.c_str() + colon + 1);
+            } else {
+                curHost = hostport;
+                curPort = 80;
+            }
+            continue;
+        }
+        curPath = loc; // same host, relative location
+    }
+    HttpResponse err;
+    err.status_code = 0;
+    err.body = "the server redirected too many times";
+    return err;
+}
+
 HttpResponse http_get(const std::string& host, int port, const std::string& path,
                        const std::string& extra_headers) {
-    char req[4096];
-    snprintf(req, sizeof(req),
-        "GET %s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Accept: application/json\r\n"
-        "Connection: close\r\n"
-        "%s"
-        "\r\n",
-        path.c_str(), host.c_str(), extra_headers.c_str());
-    return do_request(host, port, req);
+    auto build = [&extra_headers](const std::string& p, const std::string& h) {
+        char req[4096];
+        snprintf(req, sizeof(req),
+            "GET %s HTTP/1.1\r\n"
+            "Host: %s\r\n"
+            "Accept: application/json\r\n"
+            "Connection: close\r\n"
+            "%s"
+            "\r\n",
+            p.c_str(), h.c_str(), extra_headers.c_str());
+        return std::string(req);
+    };
+    return request_with_redirects(host, port, path, build);
 }
 
 HttpResponse http_post(const std::string& host, int port, const std::string& path,
                         const std::string& body, const std::string& content_type,
                         const std::string& extra_headers) {
-    char header[4096];
-    snprintf(header, sizeof(header),
-        "POST %s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Content-Type: %s\r\n"
-        "Content-Length: %zu\r\n"
-        "Accept: application/json\r\n"
-        "Connection: close\r\n"
-        "%s"
-        "\r\n",
-        path.c_str(), host.c_str(), content_type.c_str(), body.size(), extra_headers.c_str());
-    std::string request = std::string(header) + body;
-    return do_request(host, port, request);
+    auto build = [&body, &content_type, &extra_headers](const std::string& p, const std::string& h) {
+        char header[4096];
+        snprintf(header, sizeof(header),
+            "POST %s HTTP/1.1\r\n"
+            "Host: %s\r\n"
+            "Content-Type: %s\r\n"
+            "Content-Length: %zu\r\n"
+            "Accept: application/json\r\n"
+            "Connection: close\r\n"
+            "%s"
+            "\r\n",
+            p.c_str(), h.c_str(), content_type.c_str(), body.size(), extra_headers.c_str());
+        return std::string(header) + body;
+    };
+    return request_with_redirects(host, port, path, build);
 }
 
 HttpResponse http_delete(const std::string& host, int port, const std::string& path,
-                          const std::string& extra_headers) {
-    char header[4096];
-    snprintf(header, sizeof(header),
-        "DELETE %s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Content-Length: 0\r\n"
-        "Accept: application/json\r\n"
-        "Connection: close\r\n"
-        "%s"
-        "\r\n",
-        path.c_str(), host.c_str(), extra_headers.c_str());
-    return do_request(host, port, header);
+                          const std::string& extra_headers, const std::string& body,
+                          const std::string& content_type) {
+    auto build = [&body, &content_type, &extra_headers](const std::string& p, const std::string& h) {
+        char header[4096];
+        snprintf(header, sizeof(header),
+            "DELETE %s HTTP/1.1\r\n"
+            "Host: %s\r\n"
+            "Content-Type: %s\r\n"
+            "Content-Length: %zu\r\n"
+            "Accept: application/json\r\n"
+            "Connection: close\r\n"
+            "%s"
+            "\r\n",
+            p.c_str(), h.c_str(), content_type.c_str(), body.size(), extra_headers.c_str());
+        return std::string(header) + body;
+    };
+    return request_with_redirects(host, port, path, build);
 }
 
 bool http_open_stream(const std::string& host, int port, const std::string& path,
@@ -326,6 +397,13 @@ bool http_open_stream(const std::string& host, int port, const std::string& path
 
             std::string headers = to_lower(raw.substr(0, header_end));
             out.chunked = headers.find("transfer-encoding: chunked") != std::string::npos;
+
+            if (out.status_code == 301 || out.status_code == 302 ||
+                out.status_code == 307 || out.status_code == 308) {
+                out.error = "the server redirected the stream -- give the app the server's plain http:// address";
+                close(sock);
+                return false;
+            }
 
             size_t cl_pos = headers.find("content-length:");
             if (cl_pos != std::string::npos) {

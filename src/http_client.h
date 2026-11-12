@@ -9,9 +9,10 @@ struct HttpResponse {
 };
 
 // Minimal HTTP/1.1 client built directly on BSD sockets. No TLS support --
-// this is meant for talking to a Jellyfin server over plain http:// on
-// your LAN, same as your N100 box. If you ever need https://, this client
-// won't work as-is (would need mbedtls-wup wired in).
+// this is meant for talking to a Hound server over plain http:// (directly
+// on its own port 2323, or through a reverse proxy on port 80). Redirects
+// are followed within http://; one to https:// is reported as an error
+// because this client cannot follow it.
 //
 // extra_headers, if provided, must be pre-formatted with a trailing
 // "\r\n" per header line, e.g. "X-Custom: value\r\n". Range requests
@@ -26,7 +27,9 @@ HttpResponse http_post(const std::string& host, int port, const std::string& pat
                         const std::string& extra_headers = "");
 
 HttpResponse http_delete(const std::string& host, int port, const std::string& path,
-                          const std::string& extra_headers = "");
+                          const std::string& extra_headers = "",
+                          const std::string& body = "",
+                          const std::string& content_type = "application/json");
 
 // A connection opened for streaming a large response body (e.g. a movie
 // or track) instead of buffering it all into memory like http_get does.

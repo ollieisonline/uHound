@@ -1,4 +1,4 @@
-// Loads server/login config from sd:/wiiu/apps/ufin/config.json at
+// Loads server/login config from sd:/wiiu/apps/uhound/config.json at
 // startup, so credentials don't need to be hardcoded and rebuilt every
 // time. Falls back to config.h's UFIN_SERVER_HOST/etc constants if the
 // file is missing, unreadable, or malformed -- callers should treat a
@@ -34,7 +34,7 @@ struct UfinConfig {
     // Menu music: a song from the user's own library, looped quietly in
     // the menus.
     long long usageSeconds = 0;     // total time Ufin has been used, in seconds (sidebar counter); saved every 30 min
-    bool logging = false;           // write ufin_log.txt to the SD card (off: spares the card)
+    bool logging = false;           // write uhound_log.txt to the SD card (off: spares the card)
     bool jellyfinBackdrops = false; // show the selected title's Jellyfin backdrop behind the whole UI
     bool menuMusicEnabled = true; // default on: plays assets/bgm.m4a unless a library song is chosen
     std::string menuMusicItemId;
@@ -96,7 +96,7 @@ struct UfinConfig {
     // version is skipped -- a newer one prompts again. Settings > Check for updates still shows it.
     std::string skippedUpdateVersion;
 
-    // Optional video transcode settings (see JellyfinClient::
+    // Optional video transcode settings (see HoundClient::
     // buildVideoStreamUrl for what they mean and why the defaults are
     // what they are). Missing from config.json -> these defaults.
     int videoBitrate = 2500000;

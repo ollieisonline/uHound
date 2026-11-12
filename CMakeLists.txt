@@ -6,7 +6,7 @@ endif()
 
 set(CMAKE_TOOLCHAIN_FILE "$ENV{DEVKITPRO}/wut/share/wut.toolchain.cmake")
 
-project(ufin CXX C)
+project(uhound CXX C)
 
 # FFmpeg (built from FFmpeg-wiiu, see configure-wiiu) installs here --
 # confirmed by actually running the build, not a guess.
@@ -24,9 +24,9 @@ link_directories("$ENV{DEVKITPRO}/portlibs/wiiu/lib")
 
 # Our own TLS client: Mbed TLS (vendored in src/vendor/mbedtls, Apache-2.0, trimmed to a TLS 1.2 client; see
 # include/mbedtls/config.h) -- the console's system TLS is not emulated by Cemu and is refused by modern servers.
-file(GLOB UFIN_MBEDTLS_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/vendor/mbedtls/library/*.c)
+file(GLOB UHOUND_MBEDTLS_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/vendor/mbedtls/library/*.c)
 
-add_executable(ufin
+add_executable(uhound
     src/main.cpp
     src/ufin_log.cpp
     src/config_loader.cpp
@@ -36,12 +36,12 @@ add_executable(ufin
     src/tls_roots.cpp
     src/update_check.cpp
     src/http_stream_reader.cpp
-    src/jellyfin_client.cpp
+    src/hound_client.cpp
     src/item_labels.cpp
     src/image_cache.cpp
     src/input.cpp
     src/vendor/cJSON.c
-    ${UFIN_MBEDTLS_SOURCES}
+    ${UHOUND_MBEDTLS_SOURCES}
     src/media/file_stream_io.cpp
     src/media/http_stream_io.cpp
     src/media/decoder.cpp
@@ -64,14 +64,14 @@ add_executable(ufin
     src/vendor/imgui/backends/imgui_impl_gx2.cpp
 )
 
-target_include_directories(ufin PRIVATE src src/vendor src/vendor/imgui)
+target_include_directories(uhound PRIVATE src src/vendor src/vendor/imgui)
 # ImGui's default "open URL in shell" helper uses fork/execvp/waitpid,
-# which the Wii U doesn't have (link error). Ufin never uses it.
-target_compile_definitions(ufin PRIVATE IMGUI_DISABLE_DEFAULT_SHELL_FUNCTIONS)
+# which the Wii U doesn't have (link error). uHound never uses it.
+target_compile_definitions(uhound PRIVATE IMGUI_DISABLE_DEFAULT_SHELL_FUNCTIONS)
 # HTTPS for the update check: the vendored Mbed TLS above (see src/https_client.h). BEFORE, so that a
 # portlib copy of mbedtls in $DEVKITPRO/portlibs/ppc/include can never shadow the vendored headers.
-target_include_directories(ufin BEFORE PRIVATE src/vendor/mbedtls/include src/vendor/mbedtls/library)
-target_compile_definitions(ufin PRIVATE UFIN_TLS_MBEDTLS)
+target_include_directories(uhound BEFORE PRIVATE src/vendor/mbedtls/include src/vendor/mbedtls/library)
+target_compile_definitions(uhound PRIVATE UHOUND_TLS_MBEDTLS)
 
 # Compile our GLSL shaders (src/media/shaders/nv12_video.{vert,frag}) into
 # a .gsh binary via glslcompiler.elf (from Exzap/CafeGLSL -- a Mesa-based
@@ -95,8 +95,8 @@ add_custom_command(
     DEPENDS ${SHADER_DIR}/nv12_video.vert ${SHADER_DIR}/nv12_video.frag ${GLSLCOMPILER} ${BIN2H}
     COMMENT "Compiling nv12_video shader (glslcompiler.elf + bin2h.py)"
 )
-add_custom_target(ufin_shaders DEPENDS ${SHADER_DIR}/nv12_video_shader.h)
-add_dependencies(ufin ufin_shaders)
+add_custom_target(uhound_shaders DEPENDS ${SHADER_DIR}/nv12_video_shader.h)
+add_dependencies(uhound uhound_shaders)
 
 # whb = "Wii U Homebrew Bootstrap" helper lib bundled with wut, gives us
 # WHBProcInit/OSScreen-adjacent helpers without hand-rolling the app
@@ -107,9 +107,9 @@ add_dependencies(ufin ufin_shaders)
 # avcodec, both depend on avutil, swresample/swscale depend on avutil.
 # Listing avutil last lets the linker resolve symbols pulled in by the
 # others above it. swscale is still linked because the h264_wiiu decoder
-# inside libavcodec references it, even though Ufin itself no longer
+# inside libavcodec references it, even though uHound itself no longer
 # converts pixels on the CPU (the NV12 shader does that on the GPU).
-target_link_libraries(ufin
+target_link_libraries(uhound
     wut
     SDL2
     avformat
@@ -119,20 +119,20 @@ target_link_libraries(ufin
     avutil
 )
 
-wut_create_rpx(ufin)
+wut_create_rpx(uhound)
 
 # Package into a .wuhb so it shows up directly on the Wii U menu under
 # Aroma, instead of needing the Homebrew Launcher.
 find_program(WUHBTOOL wuhbtool)
 if(WUHBTOOL)
-    add_custom_command(TARGET ufin POST_BUILD
-        COMMAND ${WUHBTOOL} "$<TARGET_FILE_DIR:ufin>/ufin.rpx" "${CMAKE_BINARY_DIR}/ufin.wuhb"
-            --name="Ufin"
-            --short-name="Ufin"
-            --author="antu2010"
+    add_custom_command(TARGET uhound POST_BUILD
+        COMMAND ${WUHBTOOL} "$<TARGET_FILE_DIR:uhound>/uhound.rpx" "${CMAKE_BINARY_DIR}/uhound.wuhb"
+            --name="uHound"
+            --short-name="uHound"
+            --author="ollieisonline"
             --icon="${CMAKE_CURRENT_SOURCE_DIR}/icon.png"
-        COMMENT "Packing ufin.wuhb"
+        COMMENT "Packing uhound.wuhb"
     )
 else()
-    message(WARNING "wuhbtool not found -- you'll get ufin.rpx but no .wuhb. Install the wiiu-dev group with pacman.")
+    message(WARNING "wuhbtool not found -- you'll get uhound.rpx but no .wuhb. Install the wiiu-dev group with pacman.")
 endif()

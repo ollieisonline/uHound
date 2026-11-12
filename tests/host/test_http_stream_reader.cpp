@@ -93,7 +93,7 @@ static const char* kChunkedHead =
 
 int main() {
     // The defaults the rest of Ufin relies on stay what they were.
-    CHECK_EQ(HttpStreamReader::DEFAULT_TIMEOUT_SECONDS, 15);
+    CHECK_EQ(HttpStreamReader::DEFAULT_TIMEOUT_SECONDS, 30);
 
     // --- 1. A silent server: the wait ends at the startup timeout, and the error says "timed out". ---
     {
@@ -236,7 +236,37 @@ int main() {
         CHECK(contains(r.lastError(), "connection closed by the server"));
     }
 
-    // --- 8. Connecting to nothing at all still fails fast with its own message. ---
+    // --- 8. A 200 whose body is an error document (JSON/HTML), not media: refused
+    // with the body's message instead of a cryptic decoder failure later. ---
+    {
+        ScriptedServer server([](int fd) {
+            const std::string body = "{\"status\":\"error\",\"error\":\"torrent not ready\"}";
+            sendAll(fd, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
+                            std::to_string(body.size()) + "\r\n\r\n" + body);
+        });
+        CHECK(server.start());
+        HttpStreamReader r("127.0.0.1", server.port(), "/x");
+        CHECK(!r.open());
+        CHECK(contains(r.lastError(), "did not send video"));
+        CHECK(contains(r.lastError(), "torrent not ready"));
+    }
+
+    // --- 8b. A text/plain error body (e.g. the Hound server's "Video URL not
+    // provided") is refused the same way as JSON/HTML. ---
+    {
+        ScriptedServer server([](int fd) {
+            const std::string body = "Video URL not provided";
+            sendAll(fd, "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: " +
+                            std::to_string(body.size()) + "\r\n\r\n" + body);
+        });
+        CHECK(server.start());
+        HttpStreamReader r("127.0.0.1", server.port(), "/x");
+        CHECK(!r.open());
+        CHECK(contains(r.lastError(), "did not send video"));
+        CHECK(contains(r.lastError(), "Video URL not provided"));
+    }
+
+    // --- 9. Connecting to nothing at all still fails fast with its own message. ---
     {
         int port;
         {

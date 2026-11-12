@@ -11,7 +11,7 @@
 // compile/run-tested against this specific wut version -- if the file
 // genuinely exists on the SD card but this still reports "not found",
 // this path is the first thing to double check.
-static const char* CONFIG_PATH = "/vol/external01/wiiu/apps/ufin/config.json";
+static const char* CONFIG_PATH = "/vol/external01/wiiu/apps/uhound/config.json";
 
 bool loadConfigFromSD(UfinConfig& outConfig, std::string& outError) {
     return loadConfigFromFile(CONFIG_PATH, outConfig, outError);
@@ -174,7 +174,7 @@ bool saveConfigToSD(const UfinConfig& config, std::string& outError) {
     // The app folder may not exist when Ufin runs as a .wuhb.
     mkdir("/vol/external01/wiiu", 0777);
     mkdir("/vol/external01/wiiu/apps", 0777);
-    mkdir("/vol/external01/wiiu/apps/ufin", 0777);
+    mkdir("/vol/external01/wiiu/apps/uhound", 0777);
     return saveConfigToFile(CONFIG_PATH, config, outError);
 }
 

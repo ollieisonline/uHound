@@ -42,7 +42,7 @@
 #include "image_cache.h"
 #include "input.h"
 #include "item_labels.h"
-#include "jellyfin_client.h"
+#include "hound_client.h"
 #include "play_queue.h"
 #include "playback_logic.h"
 #include "seek.h"
@@ -70,7 +70,7 @@ struct Frame {
     std::string id;     // parent id for Items, the search term for Search
     std::string title;  // header / breadcrumb
     std::string backdropItemId, backdropTag; // the opened item's own backdrop: the fallback behind its page
-    std::vector<JellyfinItem> items;
+    std::vector<MediaItem> items;
     int selected = 0;
 };
 
@@ -109,7 +109,7 @@ static bool procRunningTracked() {
 // Loads posters / covers in the background (see image_cache.h). Created
 // after graphics, destroyed before them.
 static ImageCache* g_images = nullptr;
-static const JellyfinClient* g_imageClient = nullptr;
+static const HoundClient* g_imageClient = nullptr;
 
 // Jellyfin backdrops (Settings > Jellyfin backdrops) get a cache of their own: they are big
 // (full-screen) and only a few are ever alive at once -- the current one, the one fading out, the
@@ -122,7 +122,7 @@ static const int BACKDROP_W = 1920, BACKDROP_H = 1080;
 
 // Texture for an item's artwork at up to maxW x maxH, 0 if it has none
 // or it's still loading.
-static ui::Texture artFor(const JellyfinItem& item, int maxW, int maxH, float* aspect) {
+static ui::Texture artFor(const MediaItem& item, int maxW, int maxH, float* aspect) {
     if (!g_images || !g_imageClient || item.imageTag.empty()) return 0;
     return g_images->get(g_imageClient->buildImagePath(item.imageItemId, item.imageTag, maxW, maxH), maxW, maxH,
                          aspect);
@@ -157,7 +157,7 @@ static void showBusy(const std::string& title, const std::vector<std::string>& l
 }
 
 // (Re)loads a frame's items from the server. Keeps the selection in range.
-static bool loadFrame(JellyfinClient& client, Frame& f) {
+static bool loadFrame(HoundClient& client, Frame& f) {
     bool ok = false;
     switch (f.kind) {
         case Frame::Kind::Views: {
@@ -165,7 +165,7 @@ static bool loadFrame(JellyfinClient& client, Frame& f) {
             if (ok) {
                 // Home: "Continue watching", "Next up" and "Favourites" first,
                 // when they have anything in them.
-                std::vector<JellyfinItem> rows, tmp;
+                std::vector<MediaItem> rows, tmp;
                 if (client.getResume(tmp) && !tmp.empty()) rows.push_back(makeHomeRow(HOME_RESUME, (int)tmp.size()));
                 if (client.getNextUp(tmp) && !tmp.empty()) rows.push_back(makeHomeRow(HOME_NEXT_UP, (int)tmp.size()));
                 if (client.getFavorites(tmp) && !tmp.empty()) rows.push_back(makeHomeRow(HOME_FAVORITES, (int)tmp.size()));
@@ -177,7 +177,7 @@ static bool loadFrame(JellyfinClient& client, Frame& f) {
         case Frame::Kind::NextUp:    ok = client.getNextUp(f.items); break;
         case Frame::Kind::Favorites: ok = client.getFavorites(f.items); break;
         case Frame::Kind::Items:  ok = client.getItems(f.id, f.items); break;
-        case Frame::Kind::LiveTv: ok = client.getLiveTvChannels(f.items); break;
+        case Frame::Kind::LiveTv: ok = false; break; // Hound has no Live TV here
         case Frame::Kind::Search: ok = client.search(f.id, f.items); break;
         case Frame::Kind::Settings: ok = true; break; // built by the app, not the server
     }
@@ -414,11 +414,12 @@ struct PlaybackControl {
     }
 };
 
-// How long a stream request that burns in a subtitle track may take to start
-// answering (see PlayOptions::startupTimeoutSeconds). Jellyfin extracts the
-// track from the media file first -- a read of the whole file for an embedded
-// track -- so this is generous; B cancels the wait at any point.
-static const int SUBTITLE_STARTUP_TIMEOUT_SECONDS = 90;
+// How long a stream may take to start answering at all (see
+// PlayOptions::startupTimeoutSeconds). Hound has no transcode to prepare, but
+// a P2P (torrent) stream first has to find peers and pull the first pieces
+// before the server sends a byte, which routinely outlasts the default wait --
+// so this is generous; B cancels the wait at any point.
+static const int STREAM_STARTUP_TIMEOUT_SECONDS = 90;
 
 // Audio / subtitle language carried from one episode to the next.
 struct TrackPrefs {
@@ -430,7 +431,7 @@ struct TrackPrefs {
 
 class ProgressReporter {
 public:
-    ProgressReporter(JellyfinClient& client, std::string itemId, PlaybackIds ids)
+    ProgressReporter(HoundClient& client, std::string itemId, PlaybackIds ids)
         : client_(client), itemId_(std::move(itemId)), ids_(std::move(ids)),
           thread_([this] { run(); }) {}
 
@@ -463,7 +464,7 @@ private:
         }
     }
 
-    JellyfinClient& client_;
+    HoundClient& client_;
     std::string itemId_;
     PlaybackIds ids_;
     double position_ = 0.0; // guarded by mutex_ (a 64-bit atomic would need libatomic on PPC)
@@ -502,7 +503,7 @@ static void applyQueueModel(ui::NowPlayingModel& np, const QueueInfo* info) {
     if (info->q) {
         const PlayQueue& q = *info->q;
         np.queueText = queueLine(q);
-        const JellyfinItem* next = q.repeat() == PlayQueue::Repeat::One ? &q.current() : q.peekNext();
+        const MediaItem* next = q.repeat() == PlayQueue::Repeat::One ? &q.current() : q.peekNext();
         np.nextText = next ? "Next: " + itemDisplayName(*next) : std::string();
         np.queueControls = true;
         np.shuffleOn = q.shuffled();
@@ -517,7 +518,7 @@ static void applyQueueModel(ui::NowPlayingModel& np, const QueueInfo* info) {
 // seeks (each one restarts the transcode), the on-screen HUD / Now
 // Playing screen, and Jellyfin progress reporting. Returns the player
 // result and fills errorMessage on PlayResult::Error.
-static PlayResult playItem(JellyfinClient& client, const UfinConfig& cfg, const JellyfinItem& picked,
+static PlayResult playItem(HoundClient& client, const UfinConfig& cfg, const MediaItem& picked,
                            std::string& errorMessage, QueueInfo* queue = nullptr, double startAtSeconds = 0.0,
                            TrackPrefs* prefs = nullptr) {
     const bool isAudio = (picked.type == "Audio");
@@ -555,27 +556,15 @@ static PlayResult playItem(JellyfinClient& client, const UfinConfig& cfg, const 
     showBusy(isLive ? "Tuning" : "Loading",
              {title, "",
               isLive ? "Asking the server to tune the channel and start the transcode."
-                     : "Waiting for the server to start streaming."});
+                     : "Waiting for the server to start streaming (P2P streams can take a minute -- B cancels)."});
 
     if (isLive) {
-        // Live TV needs the tuner opened first; the stream endpoint then
-        // wants the ids that come back.
-        LiveStreamSession live;
-        if (!client.openLiveStream(picked.id, cfg.videoBitrate, live)) {
-            errorMessage = "Could not open the channel: " + client.lastError();
-            return PlayResult::Error;
-        }
-        videoOptions.mediaSourceId = live.mediaSourceId;
-        videoOptions.liveStreamId = live.liveStreamId;
-        videoOptions.playSessionId = live.playSessionId;
-        playOptions.displayAspect = live.info.displayAspect > 0.0 ? live.info.displayAspect : 16.0 / 9.0;
-        durationSeconds = 0.0;
-    } else if (!isAudio) {
-        // Jellyfin is asked to encode every video at exactly 1280x720
-        // (768x480 in the 480p mode, 1920x1080 in the experimental 1080p30 mode; see
-        // buildVideoStreamUrl for why), so the real shape of the
-        // picture has to come from the item's metadata. If we can't get
-        // it, assume 16:9.
+        errorMessage = "Live TV isn't available on Hound.";
+        return PlayResult::Error;
+    }
+    if (!isAudio) {
+        // The stream's own metadata (see getVideoInfo) tells the real shape
+        // of the picture. If we can't get it, assume 16:9.
         if (client.getVideoInfo(picked.id, info)) {
             videoOptions.mediaSourceId = info.mediaSourceId;
             if (info.runTimeTicks > 0) durationSeconds = info.runTimeTicks / 10000000.0;
@@ -832,19 +821,11 @@ static PlayResult playItem(JellyfinClient& client, const UfinConfig& cfg, const 
                      h264::wireName(h264::parse(videoOptions.profile)), videoOptions.width,
                      videoOptions.height, videoOptions.videoBitrate);
         }
-        // A burned-in subtitle makes Jellyfin prepare the track (extract it, and
-        // its fonts, from the media file) before it answers the stream request at
-        // all, which can take far longer than the usual 15 s wait for the first
-        // bytes -- so that wait is longer here, and B cancels it (see
-        // PlayOptions::startupTimeoutSeconds). No subtitle: unchanged.
-        const bool burnedInSubtitle = !isAudio && videoOptions.subtitleStreamIndex >= 0;
-        playOptions.startupTimeoutSeconds = burnedInSubtitle ? SUBTITLE_STARTUP_TIMEOUT_SECONDS : 0;
-        if (burnedInSubtitle) {
-            OSReport("Ufin: subtitles: track %d (%s) burned in by the server%s\n", videoOptions.subtitleStreamIndex,
-                     videoOptions.subtitleIsText ? "text" : "bitmap or unknown",
-                     (videoOptions.subtitleIsText && videoOptions.startTimeTicks > 0) ? ", source timestamps kept (CopyTimestamps)" : "");
-            showBusy("Loading", {title, "", "Preparing the subtitles on the server (B to cancel)."});
-        }
+        // Hound's P2P streams can take a long time to send their first byte
+        // (peer discovery + the first torrent pieces), so the wait for them
+        // is generous and B cancels it (see PlayOptions::startupTimeoutSeconds).
+        // Music files are local to the server and start immediately.
+        playOptions.startupTimeoutSeconds = isAudio ? 0 : STREAM_STARTUP_TIMEOUT_SECONDS;
         playOptions.startOffsetSeconds = startAt;
 
         result = player.play(target.host, target.port, target.path,
@@ -880,7 +861,6 @@ static PlayResult playItem(JellyfinClient& client, const UfinConfig& cfg, const 
     // ends that transcode.
     ids.playSessionId = videoOptions.playSessionId;
     client.reportPlaybackStopped(picked.id, (int64_t)(player.positionSeconds() * 10000000.0), ids);
-    if (isLive) client.closeLiveStream(ids.liveStreamId);
 
     if (queue) {
         queue->trackStep = control.trackStep;
@@ -904,13 +884,13 @@ static PlayResult playItem(JellyfinClient& client, const UfinConfig& cfg, const 
 // if it's more than 3 s in, like most players), B stops the whole queue,
 // and the queue ends after the last track -- unless Repeat is on (all: start over; one: the
 // same track again). Shuffle and Repeat can be changed while it plays (PlaybackControl).
-static PlayResult playQueue(JellyfinClient& client, const UfinConfig& cfg, PlayQueue& queue,
+static PlayResult playQueue(HoundClient& client, const UfinConfig& cfg, PlayQueue& queue,
                             std::string& errorMessage) {
     while (!queue.empty() && WHBProcIsRunning()) {
         QueueInfo info;
         info.q = &queue; // Now Playing reads the track number, "Next:" and the Shuffle / Repeat state from it live
         info.queueText = queueLine(queue);
-        if (const JellyfinItem* next = queue.peekNext()) info.nextText = "Next: " + itemDisplayName(*next);
+        if (const MediaItem* next = queue.peekNext()) info.nextText = "Next: " + itemDisplayName(*next);
 
         PlayResult result = playItem(client, cfg, queue.current(), errorMessage, &info);
         if (result == PlayResult::Error) return result;
@@ -1014,7 +994,7 @@ static int updateWorkerMain(int, const char**) {
         f.error = r.error;
         return f;
     };
-    OSReport("Ufin: update check: this is Ufin %s, asking GitHub\n", ufin::kVersion);
+    OSReport("Ufin: update check: this is uHound %s, asking GitHub\n", ufin::kVersion);
     updatecheck::Outcome outcome = updatecheck::checkForUpdate(fetch, ufin::kVersion, ufin::kGithubOwner,
                                                                ufin::kGithubRepo, ufin::kStorePackageName,
                                                                [] { return g_update.cancel.load(); });
@@ -1132,10 +1112,10 @@ static void checkForUpdatesNow() {
 }
 
 enum class Section { Home, LiveTv, Search, Settings, Help };
-enum class Mode { SignIn, QuickConnect, Browse, Profiles }; // Profiles = "Who's watching?"
+enum class Mode { SignIn, Browse, Profiles }; // Profiles = "Who's watching?"
 
 struct App {
-    JellyfinClient& client;
+    HoundClient& client;
     UfinConfig cfg;
     Mode mode = Mode::SignIn;
     std::vector<Frame> stack;
@@ -1152,11 +1132,6 @@ struct App {
     int loginFocus = 0;
     std::string loginMessage;
     bool loginMessageIsError = false;
-    // Quick Connect
-    JellyfinClient::QuickConnectRequest quick;
-    OSTime quickLastPoll = 0;
-    std::string quickMessage;
-    bool quickMessageIsError = false;
 
     // Menu music, the CRT easter egg, and short notices
     MenuMusic music;
@@ -1177,7 +1152,7 @@ struct App {
     int connectingProfile = -1;  // the profile a sign-in attempt is for (Retry uses it)
     bool profilesFromApp = false; // opened from Settings: B goes back to the library
 
-    explicit App(JellyfinClient& c) : client(c) {}
+    explicit App(HoundClient& c) : client(c) {}
 
     void say(const std::string& text) {
         toast = text;
@@ -1212,7 +1187,7 @@ struct App {
 
     void findLiveTv() {
         liveTvViewName.clear();
-        for (const JellyfinItem& v : stack[0].items) {
+        for (const MediaItem& v : stack[0].items) {
             if (isLiveTvView(v)) liveTvViewName = v.name;
         }
     }
@@ -1504,12 +1479,7 @@ struct App {
                 t.loggedOut = p.accessToken.empty();
                 t.color = ui::profileColor(p.color);
                 t.letter = profiles::initial(p.name);
-                // The user's Jellyfin picture, if the server has one (else the letter stays). Fetched like
-                // any artwork; only from the server the app is talking to.
-                if (g_images && g_imageClient && !p.userId.empty() && p.host == client.host() && p.port == client.port()) {
-                    t.picture = g_images->get("/Users/" + p.userId + "/Images/Primary?maxWidth=256&maxHeight=256&quality=90&format=Jpg",
-                                              256, 256, &t.pictureAspect);
-                }
+                // Hound has no per-user profile pictures; the letter tile stays.
             }
             if (advance) bounces[(size_t)i].step(dt, i == profileCursor && errorMessage.empty());
             t.bounce = bounces[(size_t)i].shape();
@@ -1527,7 +1497,7 @@ struct App {
         return m;
     }
 
-    enum LoginRow { RowServer, RowUser, RowPassword, RowSignIn, RowQuickConnect, LOGIN_ROWS };
+    enum LoginRow { RowServer, RowUser, RowPassword, RowSignIn, LOGIN_ROWS };
 
     bool applyServerField() {
         std::string host, err;
@@ -1546,13 +1516,13 @@ struct App {
         std::string value, kbError;
         switch (row) {
             case RowServer:
-                if (ui::promptKeyboard(u"Server address, e.g. 192.168.1.100:8096", loginServer, false, true, value, kbError)) {
+                if (ui::promptKeyboard(u"Server address, e.g. 192.168.1.100:2323", loginServer, false, true, value, kbError)) {
                     loginServer = value;
                     loginFocus = RowUser;
                 }
                 break;
             case RowUser:
-                if (ui::promptKeyboard(u"Jellyfin username", loginUser, false, true, value, kbError)) {
+                if (ui::promptKeyboard(u"Hound username", loginUser, false, true, value, kbError)) {
                     loginUser = value;
                     loginFocus = RowPassword;
                 }
@@ -1566,7 +1536,7 @@ struct App {
             case RowSignIn: {
                 if (!applyServerField()) return;
                 if (loginUser.empty()) {
-                    loginMessage = "Enter your username (or use Quick Connect).";
+                    loginMessage = "Enter your username.";
                     loginMessageIsError = true;
                     loginFocus = RowUser;
                     return;
@@ -1577,27 +1547,17 @@ struct App {
                     enterLibrary();
                 } else {
                     const std::string& e = client.lastError();
-                    loginMessage = e.find("status 401") != std::string::npos ? "Wrong username or password."
-                                 : e.find("status 0") != std::string::npos
-                                     ? "Can't reach " + loginServer + ". Check the address and that Jellyfin is running."
-                                     : e;
+                    loginMessage = e.find("status 401") != std::string::npos || e.find("Wrong username") != std::string::npos
+                                 ? "Wrong username or password."
+                                 : e.find("redirected to https") != std::string::npos
+                                     ? e
+                                     : e.find("status 0") != std::string::npos
+                                         ? "Can't reach " + loginServer + ". Check the address and that Hound is running."
+                                         : e;
                     loginMessageIsError = true;
                 }
                 break;
             }
-            case RowQuickConnect:
-                if (!applyServerField()) return;
-                showBusy("Starting Quick Connect", {loginServer});
-                if (client.quickConnectStart(quick)) {
-                    mode = Mode::QuickConnect;
-                    quickLastPoll = OSGetTime();
-                    quickMessage = "Waiting for approval";
-                    quickMessageIsError = false;
-                } else {
-                    loginMessage = client.lastError();
-                    loginMessageIsError = true;
-                }
-                break;
         }
         if (!kbError.empty()) {
             loginMessage = "Keyboard: " + kbError;
@@ -1618,32 +1578,12 @@ struct App {
         if (pressed & BTN_DOWN) loginFocus = (loginFocus + 1) % LOGIN_ROWS;
         else if (pressed & BTN_UP) loginFocus = (loginFocus - 1 + LOGIN_ROWS) % LOGIN_ROWS;
         else if (pressed & VPAD_BUTTON_A) activateLoginRow(loginFocus);
-        else if (pressed & VPAD_BUTTON_X) activateLoginRow(RowQuickConnect);
-    }
-
-    // Called every frame while the Quick Connect code is on screen.
-    void pollQuickConnect() {
-        if (mode != Mode::QuickConnect || quickMessageIsError) return;
-        if (secondsSince(quickLastPoll) < 2.0) return;
-        quickLastPoll = OSGetTime();
-        if (client.quickConnectApproved(quick.secret)) {
-            showBusy("Signing in");
-            if (client.quickConnectFinish(quick.secret)) {
-                enterLibrary();
-            } else {
-                quickMessage = client.lastError();
-                quickMessageIsError = true;
-            }
-        } else if (!client.lastError().empty()) {
-            quickMessage = client.lastError();
-            quickMessageIsError = true;
-        }
     }
 
     // --- menu music ---
 
     // Music source: a library song the user picked (press - on it) wins; otherwise the local
-    // default in sd:/wiiu/apps/ufin/assets/ (bgm.m4a, or bgm.mp3), if one is there.
+    // default in sd:/wiiu/apps/uhound/assets/ (bgm.m4a, or bgm.mp3), if one is there.
     bool localMusicPresent() const {
         if (localMusicState < 0) {
             localMusicPath = findLocalMenuMusic();
@@ -1728,7 +1668,7 @@ struct App {
         const Frame& f = stack.back();
         if (f.kind == Frame::Kind::Settings) return std::string();
         if (!sidebarFocused && f.selected >= 0 && f.selected < (int)f.items.size()) {
-            const JellyfinItem& it = f.items[(size_t)f.selected];
+            const MediaItem& it = f.items[(size_t)f.selected];
             if (!it.backdropTag.empty())
                 return client.buildBackdropPath(it.backdropItemId, it.backdropTag, BACKDROP_W, BACKDROP_H);
         }
@@ -1771,11 +1711,14 @@ struct App {
             bool ok;
             if (!cfg.menuMusicItemId.empty()) {
                 const std::string itemId = cfg.menuMusicItemId;
-                JellyfinClient* c = &client;
+                HoundClient* c = &client;
                 ok = music.start(client.host(), client.port(), [c, itemId] {
                     static uint32_t n = 0;
+                    // Hound has no music libraries, so this yields an empty
+                    // path; the local file below takes over then.
                     return c->buildAudioStreamUrl(itemId, 0, makePlaySessionId((uint64_t)OSGetTime(), ++n)).path;
                 });
+                if (!ok) ok = music.startFile(localMusicPath);
             } else {
                 ok = music.startFile(localMusicPath);
             }
@@ -1788,7 +1731,7 @@ struct App {
         }
     }
 
-    void chooseMenuMusic(const JellyfinItem& item) {
+    void chooseMenuMusic(const MediaItem& item) {
         if (item.type != "Audio") {
             say("Select a song, then press - to use it as menu music");
             return;
@@ -1840,7 +1783,7 @@ struct App {
                 else if (localMusicPresent())
                     e.detail = "Plays the music file in the assets folder -- or select a song and press -";
                 else
-                    e.detail = "Put bgm.m4a in sd:/wiiu/apps/ufin/assets, or select a song and press -";
+                    e.detail = "Put bgm.m4a in sd:/wiiu/apps/uhound/assets, or select a song and press -";
                 break;
             case SetAccent:
                 e.name = "Accent colour";
@@ -1923,7 +1866,7 @@ struct App {
                 e.detail = "Gentle snowfall over the menus";
                 break;
             case SetBackdrops:
-                e.name = "Jellyfin backdrops";
+                e.name = "Server backdrops";
                 e.icon = ui::Icon::Video;
                 e.tag = onOff(cfg.jellyfinBackdrops);
                 e.detail = "The selected title's backdrop behind the whole UI (uses more network)";
@@ -1932,7 +1875,7 @@ struct App {
                 e.name = "Logging";
                 e.icon = ui::Icon::Info;
                 e.tag = onOff(cfg.logging);
-                e.detail = "Writes ufin_log.txt to the SD card -- off by default to spare the card";
+                e.detail = "Writes uhound_log.txt to the SD card -- off by default to spare the card";
                 break;
             case SetClock:
                 e.name = "Clock";
@@ -1984,11 +1927,11 @@ struct App {
                 e.detail = "Compare this version with the latest release on GitHub";
                 break;
             case SetAbout:
-                e.name = "About Ufin";
+                e.name = "About uHound";
                 e.icon = ui::Icon::Info;
                 e.tag = ufin::kVersion;
                 // Build time: makes an old build on the SD card easy to spot.
-                e.detail = std::string("A Jellyfin client for the Wii U  -  built ") + __DATE__ + " " + __TIME__;
+                e.detail = std::string("A Hound client for the Wii U  -  built ") + __DATE__ + " " + __TIME__;
                 break;
         }
         return e;
@@ -2020,7 +1963,7 @@ struct App {
                 localMusicState = -1; // look for the music file again (it may have been added since)
                 localMusicFailed = false;
                 if (!musicSourceAvailable()) {
-                    say("Put bgm.m4a in sd:/wiiu/apps/ufin/assets, or select a song and press -");
+                    say("Put bgm.m4a in sd:/wiiu/apps/uhound/assets, or select a song and press -");
                     return;
                 }
                 cfg.menuMusicEnabled = !cfg.menuMusicEnabled;
@@ -2071,13 +2014,13 @@ struct App {
                 break;
             case SetBackdrops:
                 cfg.jellyfinBackdrops = !cfg.jellyfinBackdrops;
-                say(cfg.jellyfinBackdrops ? "Jellyfin backdrops on" : "Jellyfin backdrops off");
+                say(cfg.jellyfinBackdrops ? "Server backdrops on" : "Server backdrops off");
                 break;
             case SetLogging:
                 cfg.logging = !cfg.logging;
                 UfinLogSetEnabled(cfg.logging ? 1 : 0);
                 if (cfg.logging) OSReport("Ufin: logging turned on in Settings\n");
-                say(cfg.logging ? "Logging on: writing ufin_log.txt" : "Logging off");
+                say(cfg.logging ? "Logging on: writing uhound_log.txt" : "Logging off");
                 break;
             case SetClock:
                 cfg.clock = !cfg.clock;
@@ -2113,7 +2056,7 @@ struct App {
                 // the Rainbow accent toggle in Settings for good, rather than
                 // switching it on outright -- see SetUnlockRainbow above.
                 if (cfg.rainbowEasterEgg) {
-                    say(std::string("Ufin ") + ufin::kVersion + " -- UI inspired by CafeMP. Thanks for watching!");
+                    say(std::string("uHound ") + ufin::kVersion + " -- UI inspired by CafeMP. Thanks for watching!");
                     return;
                 }
                 aboutTaps++;
@@ -2126,7 +2069,7 @@ struct App {
                     say(std::to_string(7 - aboutTaps) + (7 - aboutTaps == 1 ? " more..." : " more..."));
                     return;
                 } else {
-                    say(std::string("Ufin ") + ufin::kVersion + " -- UI inspired by CafeMP");
+                    say(std::string("uHound ") + ufin::kVersion + " -- UI inspired by CafeMP");
                     return;
                 }
                 break;
@@ -2146,7 +2089,7 @@ struct App {
     }
 
     bool canShuffle() const {
-        for (const JellyfinItem& item : stack.back().items) {
+        for (const MediaItem& item : stack.back().items) {
             if (item.type == "Audio" || isShufflableContainer(item)) return true;
         }
         return false;
@@ -2159,7 +2102,7 @@ struct App {
     // A choice dialog over the current screen. Returns the chosen index,
     // or -1 for B.
     int choose(const std::string& title, const std::string& subtitle, const std::vector<std::string>& options,
-               const JellyfinItem* artItem = nullptr) {
+               const MediaItem* artItem = nullptr) {
         ui::ChoiceModel m;
         m.title = title;
         m.subtitle = subtitle;
@@ -2192,7 +2135,7 @@ struct App {
 
     // "Up next" with a 10 second countdown. True to play it, false if the
     // user cancelled.
-    bool upNext(const JellyfinItem& next) {
+    bool upNext(const MediaItem& next) {
         const double total = 10.0;
         const OSTime start = OSGetTime();
         ui::UpNextModel m;
@@ -2233,7 +2176,7 @@ struct App {
 
     // Plays a video / channel: offers "Resume", and after an episode ends
     // autoplays the next one (keeping its audio / subtitle language).
-    void playVideo(const JellyfinItem& picked) {
+    void playVideo(const MediaItem& picked) {
         double startAt = 0.0;
         if (shouldOfferResume(picked)) {
             std::string at = ui::formatTime(picked.positionTicks / 10000000.0);
@@ -2244,7 +2187,7 @@ struct App {
         }
         stopMusic();
         TrackPrefs prefs;
-        JellyfinItem current = picked;
+        MediaItem current = picked;
         while (WHBProcIsRunning()) {
             std::string error;
             PlayResult r = playItem(client, cfg, current, error, nullptr, startAt, &prefs);
@@ -2256,12 +2199,12 @@ struct App {
                 current.seriesId.empty()) {
                 break;
             }
-            std::vector<JellyfinItem> episodes;
+            std::vector<MediaItem> episodes;
             showBusy("Finding the next episode");
             if (!client.getEpisodes(current.seriesId, episodes)) break;
-            const JellyfinItem* next = findNextEpisode(episodes, current.id);
+            const MediaItem* next = findNextEpisode(episodes, current.id);
             if (!next) break;
-            JellyfinItem nextCopy = *next;
+            MediaItem nextCopy = *next;
             if (!upNext(nextCopy)) break;
             current = nextCopy;
             startAt = 0.0;
@@ -2269,7 +2212,7 @@ struct App {
         refreshAfterPlayback();
     }
 
-    void open(const JellyfinItem& picked) {
+    void open(const MediaItem& picked) {
         const Frame& f = stack.back();
         if (isHomeRow(picked)) {
             Frame next;
@@ -2311,10 +2254,10 @@ struct App {
     }
 
     // Y: heart / un-heart the selected item.
-    void toggleFavorite(JellyfinItem& item) {
+    void toggleFavorite(MediaItem& item) {
         if (isHomeRow(item) || item.type == "CollectionFolder" || item.type == "UserView") return;
         bool want = !item.favorite;
-        if (client.setFavorite(item.id, want)) {
+        if (client.setFavorite(item, want)) {
             item.favorite = want;
             homeStale = true;
             say(want ? "Added to favourites" : "Removed from favourites");
@@ -2324,10 +2267,10 @@ struct App {
     }
 
     // ZL: mark the selected item watched / unwatched.
-    void toggleWatched(JellyfinItem& item) {
+    void toggleWatched(MediaItem& item) {
         if (isHomeRow(item) || item.type == "CollectionFolder" || item.type == "UserView" || item.type == "TvChannel") return;
         bool want = !item.played;
-        if (client.setPlayed(item.id, want)) {
+        if (client.setPlayed(item, want)) {
             item.played = want;
             if (want) {
                 item.positionTicks = 0;
@@ -2362,7 +2305,7 @@ struct App {
     }
 
     void goLiveTv() {
-        for (const JellyfinItem& v : stack[0].items) {
+        for (const MediaItem& v : stack[0].items) {
             if (!isLiveTvView(v)) continue;
             stack.resize(1);
             Frame live;
@@ -2396,12 +2339,12 @@ struct App {
 
     void shuffle() {
         Frame& f = stack.back();
-        const JellyfinItem picked = f.items[(size_t)f.selected];
-        std::vector<JellyfinItem> tracks;
+        const MediaItem picked = f.items[(size_t)f.selected];
+        std::vector<MediaItem> tracks;
         size_t ignored = 0;
         if (isShufflableContainer(picked)) {
             showBusy("Loading", {picked.name});
-            std::vector<JellyfinItem> children;
+            std::vector<MediaItem> children;
             if (!client.getItems(picked.id, children)) {
                 errorMessage = client.lastError();
                 return;
@@ -2451,15 +2394,6 @@ struct App {
         }
         if (mode == Mode::SignIn) {
             signInInput(pressed, tapped, tapX, tapY);
-            return;
-        }
-        if (mode == Mode::QuickConnect) {
-            if (pressed & VPAD_BUTTON_B) {
-                mode = Mode::SignIn;
-                loginMessage.clear();
-            } else if ((pressed & VPAD_BUTTON_A) && quickMessageIsError) {
-                activateLoginRow(RowQuickConnect); // start again with a new code
-            }
             return;
         }
 
@@ -2543,7 +2477,7 @@ struct App {
             if (settings) {
                 activateSetting(setRows[(size_t)f.selected]);
             } else {
-                const JellyfinItem picked = f.items[(size_t)f.selected]; // open() may reallocate the stack
+                const MediaItem picked = f.items[(size_t)f.selected]; // open() may reallocate the stack
                 open(picked);
             }
         }
@@ -2565,7 +2499,7 @@ struct App {
             m.title = loggedIn ? "Something went wrong" : "Can't reach the server";
             m.lines = {errorMessage, "",
                        loggedIn ? "Press B to go back."
-                                : "Check that Jellyfin is running and that the Wii U and the server are on the "
+                                : "Check that Hound is running and that the Wii U and the server are on the "
                                   "same network."};
             m.hints = {{"B", loggedIn ? "Back" : "Retry"}};
             if (errorOffersSignIn) m.hints.push_back({"X", cfg.profiles.empty() ? "Sign in again" : "Profiles"});
@@ -2575,28 +2509,18 @@ struct App {
             ui::drawProfiles(profilesModel(true));
         } else if (mode == Mode::SignIn) {
             ui::LoginModel m;
-            m.rows = {{"Server", loginServer, "e.g. 192.168.1.100:8096", false, false, false},
-                      {"Username", loginUser, "Your Jellyfin user", false, false, false},
+            m.rows = {{"Server", loginServer, "e.g. 192.168.1.100:2323", false, false, false},
+                      {"Username", loginUser, "Your Hound username", false, false, false},
                       {"Password", loginPassword, "Leave empty if you have none", true, false, false},
-                      {"Sign in", "", "", false, true, true},
-                      {"Use Quick Connect", "", "", false, true, false}};
+                      {"Sign in", "", "", false, true, true}};
             m.focused = loginFocus;
             m.message = loginMessage.empty()
-                ? "Tip: Quick Connect signs in with a code approved from your phone -- no typing."
+                ? "Sign in to your Hound server."
                 : loginMessage;
             m.messageIsError = loginMessageIsError;
-            m.hints = {{"A", loginFocus < 3 ? "Edit" : "Select"}, {"X", "Quick Connect"}};
+            m.hints = {{"A", loginFocus < 3 ? "Edit" : "Select"}};
             if (!cfg.profiles.empty()) m.hints.push_back({"B", "Profiles"});
             ui::drawLogin(m);
-        } else if (mode == Mode::QuickConnect) {
-            ui::QuickConnectModel m;
-            m.code = quick.code;
-            m.server = loginServer;
-            m.message = quickMessage;
-            m.messageIsError = quickMessageIsError;
-            m.hints = {{"B", "Back"}};
-            if (quickMessageIsError) m.hints.insert(m.hints.begin(), ui::Hint{"A", "New code"});
-            ui::drawQuickConnect(m);
         } else {
             drawBrowserScreen();
         }
@@ -2645,13 +2569,13 @@ struct App {
             for (SettingsRow row : settingsRows()) m.items.push_back(settingsEntry(row));
             m.hints = {{"A", "Change"}, {"B", "Back"}};
         } else {
-            if (f.kind == Frame::Kind::LiveTv) m.emptyMessage = "No channels. Set up a tuner in Jellyfin.";
+            if (f.kind == Frame::Kind::LiveTv) m.emptyMessage = "Live TV isn't available on Hound.";
             if (f.kind == Frame::Kind::Search) m.emptyMessage = "No results for \"" + f.id + "\".";
             m.items.reserve(f.items.size());
             const ui::ListWindow visible =
                 ui::computeListWindow((int)f.items.size(), f.selected, ui::layout::visibleRows());
             for (int i = 0; i < (int)f.items.size(); i++) {
-                const JellyfinItem& item = f.items[(size_t)i];
+                const MediaItem& item = f.items[(size_t)i];
                 ui::ListEntry e;
                 e.name = itemDisplayName(item);
                 e.tag = itemTag(item);
@@ -2669,7 +2593,7 @@ struct App {
                 m.hints.push_back({"A", "Open"});
                 m.hints.push_back({"B", stack.size() > 1 ? "Back" : "Menu"});
                 m.hints.push_back({"X", "Search"});
-                const JellyfinItem* cur = f.items.empty() ? nullptr : &f.items[(size_t)std::min(f.selected, (int)f.items.size() - 1)];
+                const MediaItem* cur = f.items.empty() ? nullptr : &f.items[(size_t)std::min(f.selected, (int)f.items.size() - 1)];
                 bool song = cur && cur->type == "Audio";
                 bool userItem = cur && !isHomeRow(*cur) && cur->type != "CollectionFolder" && cur->type != "UserView";
                 if (userItem) m.hints.push_back({"Y", cur->favorite ? "Unfavourite" : "Favourite"});
@@ -2700,7 +2624,7 @@ int main(int argc, char** argv) {
     // The log can also go to a plain file on the SD card (see ufin_log.h) -- UDP
     // broadcast logging is silently dropped by a lot of home network
     // setups (firewalls, AP isolation, VLANs), so this is the fallback
-    // that needs no network at all: pull sd:/wiiu/apps/ufin/ufin_log.txt off
+    // that needs no network at all: pull sd:/wiiu/apps/uhound/uhound_log.txt off
     // the card after a run. It writes to the card, so it is OFF unless Settings >
     // Logging (config.json "logging") turns it on; until the config is read, early
     // lines are held in memory and written out only if it is on.
@@ -2748,7 +2672,7 @@ int main(int argc, char** argv) {
     std::string updatePromptVersion;
     if (!cfg.checkForUpdates) OSReport("Ufin: update check at start-up: off (turned off in Settings / config.json)\n");
 
-    JellyfinClient client(cfg.host, cfg.port);
+    HoundClient client(cfg.host, cfg.port);
     client.setDeviceId(cfg.deviceId);
 
     ImageCache::Backend imageBackend;
@@ -2774,7 +2698,7 @@ int main(int argc, char** argv) {
     backdropBackend.release = [](ImageCache::Handle h) { ui::releaseTexture(h); };
     g_backdrops = new ImageCache(backdropBackend, 4, BACKDROP_W);
 
-    // Help window: controller models are .glb files in sd:/wiiu/apps/ufin/assets/models/.
+    // Help window: controller models are .glb files in sd:/wiiu/apps/uhound/assets/models/.
     ui::setModelBackend([](const uint8_t* rgba, int w, int h) { return ui::uploadTexture(rgba, w, h); },
                         [](uint64_t h) { ui::releaseTexture(h); });
 
@@ -2815,7 +2739,6 @@ int main(int argc, char** argv) {
         } else if (pressed || tapped) {
             app->handleInput(pressed, tapped, tapX, tapY);
         }
-        app->pollQuickConnect();
 
         // Start once, a couple of seconds after launch, wherever the user is (the sign-in screen included);
         // turning the setting on later starts it too.

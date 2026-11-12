@@ -45,7 +45,7 @@ bool Decoder::openCodecForStream(int streamIndex, AVCodecContext** outCtx) {
 
     // Safety gate for the Wii U hardware decoder specifically (see the
     // long comment on Width=1280&Height=720 in
-    // JellyfinClient::buildVideoStreamUrl): h264_wiiu's framebuffer
+    // HoundClient::buildVideoStreamUrl): h264_wiiu's framebuffer
     // allocation is width*height*1.5 with NO internal rounding, while the
     // hardware itself writes rows at a 256-pixel-aligned pitch and a
     // 16-row-aligned height. Ufin always *asks* Jellyfin for exactly
@@ -168,8 +168,19 @@ bool Decoder::open(AVIOContext* avioCtx) {
     // by probing the actual bytes via avioCtx.
     int ret = avformat_open_input(&fmt_ctx_, "stream", nullptr, nullptr);
     if (ret < 0) {
-        snprintf(last_error_, sizeof(last_error_), "avformat_open_input failed (%d)", ret);
-        OSReport("Ufin: avformat_open_input failed (%d)\n", ret);
+        char errbuf[96];
+        av_strerror(ret, errbuf, sizeof(errbuf));
+        if (ret == AVERROR_INVALIDDATA) {
+            // With --disable-everything this build demuxes only what configure-wiiu
+            // enables, so the usual cause is a container no enabled demuxer claims
+            // (torrent releases are mostly MKV) rather than a corrupt file.
+            snprintf(last_error_, sizeof(last_error_),
+                     "the file's container isn't supported by this FFmpeg build "
+                     "(MKV needs the matroska demuxer -- see docs/ffmpeg-wiiu-build.md)");
+        } else {
+            snprintf(last_error_, sizeof(last_error_), "avformat_open_input failed (%d: %s)", ret, errbuf);
+        }
+        OSReport("Ufin: avformat_open_input failed (%d: %s)\n", ret, errbuf);
         return false;
     }
     OSReport("Ufin: avformat_open_input ok (format=%s)\n", fmt_ctx_->iformat->name);
@@ -227,10 +238,47 @@ bool Decoder::open(AVIOContext* avioCtx) {
     }
     if (audio_stream_index_ >= 0) {
         if (!openCodecForStream(audio_stream_index_, &audio_ctx_)) {
-            return false;
+            if (video_stream_index_ < 0) return false;
+            // Torrent releases often carry audio this build can't decode (DTS,
+            // E-AC3, TrueHD...). The picture is still worth watching: drop the
+            // audio and play silent rather than refusing the whole file.
+            OSReport("Ufin: audio stream %d can't be decoded (%s) -- playing without sound\n",
+                     audio_stream_index_, last_error_);
+            audio_stream_index_ = -1;
         }
     }
 
+    return true;
+}
+
+bool Decoder::seekTo(double seconds) {
+    if (!fmt_ctx_) return false;
+    if (seconds < 0.0) seconds = 0.0;
+    const int64_t ts = (int64_t)(seconds * (double)AV_TIME_BASE);
+    if (avformat_seek_file(fmt_ctx_, -1, INT64_MIN, ts, ts, 0) < 0) {
+        OSReport("Ufin: avformat_seek_file to %.1fs failed\n", seconds);
+        return false;
+    }
+    OSReport("Ufin: demuxer seeked to %.1fs\n", seconds);
+
+    // Drop anything queued from before the seek and start the codecs
+    // fresh, mirroring close()'s reset without tearing the streams down.
+    if (packet_) av_packet_unref(packet_);
+    for (AVPacket* p : video_packets_) av_packet_free(&p);
+    for (AVPacket* p : audio_packets_) av_packet_free(&p);
+    video_packets_.clear();
+    audio_packets_.clear();
+    queued_packet_bytes_ = 0;
+    queued_video_seconds_ = 0.0;
+    queued_audio_seconds_ = 0.0;
+    video_span_ = QueueSpan();
+    audio_span_ = QueueSpan();
+    publishQueueStats();
+    video_drained_ = audio_drained_ = false;
+    video_flushed_ = audio_flushed_ = false;
+    if (video_ctx_) avcodec_flush_buffers(video_ctx_);
+    if (audio_ctx_) avcodec_flush_buffers(audio_ctx_);
+    reachedEof_.store(false, std::memory_order_release);
     return true;
 }
 

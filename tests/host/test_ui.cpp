@@ -337,7 +337,7 @@ static void testLookSettings() {
     ui::tickTheme(5.0);
     SoftRender r5 = renderScreen([&] { ui::drawBrowser(m); }, "accent_rainbow_5");
     CHECK(r0.at((int)sel.x + 200, (int)sel.y + 3) != r5.at((int)sel.x + 200, (int)sel.y + 3));
-    CHECK_STR(ui::accentName(ui::Accent::Blue), "Jellyfin blue");
+    CHECK_STR(ui::accentName(ui::Accent::Blue), "Hound blue");
     ui::setAccent(ui::Accent::Blue);
     SoftRender blue = renderScreen([&] { ui::drawBrowser(m); }, "accent_blue");
     CHECK_EQ(blue.at((int)sel.x + 200, (int)sel.y + 3), SELECTED); // back to the default
@@ -463,7 +463,7 @@ static void testSettingsPreview() {
     m.title = "Settings";
     m.path.clear();
     m.items = {{"Menu music", "On", "Nessun dorma  -  loops quietly in the menus", ui::Icon::Music, 0, 0},
-               {"Accent colour", "Jellyfin blue", "A: next colour", ui::Icon::Palette, 0, 0},
+               {"Accent colour", "Hound blue", "A: next colour", ui::Icon::Palette, 0, 0},
                {"Animated background", "On", "Soft glowing shapes drift behind the menus", ui::Icon::Sparkle, 0, 0},
                {"CRT mode", "Off", "Scanlines, a phosphor glow and rounded tube corners", ui::Icon::Video, 0, 0},
                {"Snow", "Off", "Gentle snowfall over the menus", ui::Icon::Snow, 0, 0},

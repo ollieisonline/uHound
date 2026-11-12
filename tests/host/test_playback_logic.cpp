@@ -2,8 +2,8 @@
 #include "check.h"
 #include "playback_logic.h"
 
-static JellyfinItem ep(const std::string& id, const std::string& type = "Episode") {
-    JellyfinItem i;
+static MediaItem ep(const std::string& id, const std::string& type = "Episode") {
+    MediaItem i;
     i.id = id;
     i.type = type;
     return i;
@@ -11,7 +11,7 @@ static JellyfinItem ep(const std::string& id, const std::string& type = "Episode
 
 int main() {
     const int64_t s = 10000000LL;
-    JellyfinItem m;
+    MediaItem m;
     m.runTimeTicks = 6000 * s;
     m.positionTicks = 30 * s;
     CHECK(!shouldOfferResume(m));       // under a minute in
@@ -22,7 +22,7 @@ int main() {
     m.runTimeTicks = 0;                 // unknown length: offer it
     CHECK(shouldOfferResume(m));
 
-    std::vector<JellyfinItem> eps = {ep("a"), ep("b"), ep("x", "Season"), ep("c")};
+    std::vector<MediaItem> eps = {ep("a"), ep("b"), ep("x", "Season"), ep("c")};
     CHECK_STR(findNextEpisode(eps, "a")->id, "b");
     CHECK_STR(findNextEpisode(eps, "b")->id, "c"); // skips non-episodes
     CHECK(findNextEpisode(eps, "c") == nullptr);   // last one
