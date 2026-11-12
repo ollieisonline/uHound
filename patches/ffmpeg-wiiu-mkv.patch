@@ -1,0 +1,26 @@
+Containers and codecs for Hound streams. Hound proxies files as they are, and
+torrent releases are almost always MKV -- but the stock configure-wiiu only
+enables the mov, h264 and mp3 demuxers, so every MKV died in
+avformat_open_input() with "Invalid data found" (-1094995529). This patch
+enables the matroska demuxer (MKV/WebM/MKA), the AVI demuxer, and the audio
+decoders those files usually carry (E-AC3, DTS, FLAC, Opus), plus the MP3
+demuxer and parser from ffmpeg-wiiu-mp3-demuxer.patch (which this patch
+supersedes -- either one alone is enough for MP3, both is fine too).
+
+Video stays H.264 only: the console's decoder is h264_wiiu, so HEVC/x265
+releases still refuse with "no decoder registered" -- pick an H.264 (x264)
+release. An MKV whose audio can't be decoded now plays silently instead of
+failing (see src/media/decoder.cpp).
+
+--- a/configure-wiiu
++++ b/configure-wiiu
+@@ -17,7 +17,7 @@
+ --disable-doc \
+ --disable-everything \
+---enable-decoder=mpeg4,h264_wiiu,aac,ac3,mp3 \
+---enable-demuxer=mov,h264 \
++--enable-decoder=mpeg4,h264_wiiu,aac,ac3,mp3,eac3,dca,flac,opus \
++--enable-demuxer=mov,h264,mp3,matroska,avi \
+ --enable-bsf=h264_mp4toannexb \
+ --enable-filter=rotate,transpose \
+ --enable-protocol=file \

@@ -170,7 +170,16 @@ bool Decoder::open(AVIOContext* avioCtx) {
     if (ret < 0) {
         char errbuf[96];
         av_strerror(ret, errbuf, sizeof(errbuf));
-        snprintf(last_error_, sizeof(last_error_), "avformat_open_input failed (%d: %s)", ret, errbuf);
+        if (ret == AVERROR_INVALIDDATA) {
+            // With --disable-everything this build demuxes only what configure-wiiu
+            // enables, so the usual cause is a container no enabled demuxer claims
+            // (torrent releases are mostly MKV) rather than a corrupt file.
+            snprintf(last_error_, sizeof(last_error_),
+                     "the file's container isn't supported by this FFmpeg build "
+                     "(MKV needs the matroska demuxer -- see docs/ffmpeg-wiiu-build.md)");
+        } else {
+            snprintf(last_error_, sizeof(last_error_), "avformat_open_input failed (%d: %s)", ret, errbuf);
+        }
         OSReport("Ufin: avformat_open_input failed (%d: %s)\n", ret, errbuf);
         return false;
     }
@@ -229,7 +238,13 @@ bool Decoder::open(AVIOContext* avioCtx) {
     }
     if (audio_stream_index_ >= 0) {
         if (!openCodecForStream(audio_stream_index_, &audio_ctx_)) {
-            return false;
+            if (video_stream_index_ < 0) return false;
+            // Torrent releases often carry audio this build can't decode (DTS,
+            // E-AC3, TrueHD...). The picture is still worth watching: drop the
+            // audio and play silent rather than refusing the whole file.
+            OSReport("Ufin: audio stream %d can't be decoded (%s) -- playing without sound\n",
+                     audio_stream_index_, last_error_);
+            audio_stream_index_ = -1;
         }
     }
 

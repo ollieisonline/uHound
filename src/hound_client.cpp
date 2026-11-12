@@ -982,8 +982,10 @@ StreamTarget HoundClient::buildVideoStreamUrl(const std::string& itemId, const V
     }
     // Hound proxies every stream through this one endpoint (no transcode
     // parameters -- the file plays as it is). The Wii U can only decode
-    // H.264-in-MP4, so files in other formats fail in the decoder with a
-    // clear error until Hound's transcoding (WIP upstream) covers them.
+    // H.264 (the console's hardware decoder), so HEVC/x265 releases fail in
+    // the decoder with a clear error until Hound's transcoding (WIP upstream)
+    // covers them. MKV/AVI containers demux fine with the FFmpeg build the
+    // docs describe (patches/ffmpeg-wiiu-mkv.patch).
     target.path = std::string(kApi) + "/stream/" + play_context_.encodedData;
     (void)options;
     return target;
