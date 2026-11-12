@@ -16,8 +16,11 @@ static const char* kApi = "/api/v1";
 
 // How this console identifies itself to Hound on login (see the
 // authentication docs: X-Client-Id / X-Client-Platform / X-Device-Id).
-static const char* kClientId = "uhound-wiiu";
-static const char* kClientPlatform = "wiiu";
+// The server validates these against its own allow-lists (hound-web,
+// hound-app; web, electron-desktop, ios/android variants) and rejects the
+// login with a 400 otherwise, so custom values can't be used.
+static const char* kClientId = "hound-app";
+static const char* kClientPlatform = "web";
 
 HoundClient::HoundClient(std::string host, int port)
     : host_(std::move(host)), port_(port) {}
@@ -128,13 +131,25 @@ struct Envelope {
 
 // "what failed (status N)". When there is no HTTP status at all (DNS,
 // connect, timeout, a redirect this client can't follow), the socket-level
-// reason from the response body is included so the sign-in screen can show
-// why the server was unreachable.
+// reason from the response body is included; for a JSON error body
+// ({"status":"error","error":"..."}) the server's own message is included,
+// so the sign-in screen can show why a request was rejected.
 static std::string statusError(const HttpResponse& resp, const char* what) {
-    if (resp.status_code == 0 && !resp.body.empty()) {
-        return std::string(what) + " failed (status 0: " + resp.body + ")";
+    std::string detail;
+    if (resp.status_code == 0) {
+        detail = resp.body;
+    } else {
+        cJSON* json = cJSON_Parse(resp.body.c_str());
+        if (json) {
+            cJSON* e = cJSON_GetObjectItem(json, "error");
+            if (cJSON_IsString(e) && e->valuestring[0]) detail = e->valuestring;
+            cJSON_Delete(json);
+        }
     }
-    return std::string(what) + " failed (status " + std::to_string(resp.status_code) + ")";
+    std::string out = std::string(what) + " failed (status " + std::to_string(resp.status_code);
+    if (!detail.empty()) out += ": " + detail;
+    out += ")";
+    return out;
 }
 
 // GETs `path` and parses the {status, data} envelope. On failure, err says
@@ -276,7 +291,10 @@ bool HoundClient::authenticate(const std::string& username, const std::string& p
     cJSON_Delete(body);
 
     if (!resp.success) {
-        last_error_ = resp.status_code == 401 || resp.status_code == 400
+        // 401 = wrong password, 404 = unknown username; both are the same
+        // to the person typing. Anything else (400 bad client headers, 5xx)
+        // is a real problem and gets the server's own message back.
+        last_error_ = resp.status_code == 401 || resp.status_code == 404
                           ? "Wrong username or password."
                           : statusError(resp, "login");
         return false;

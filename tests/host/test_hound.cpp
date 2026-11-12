@@ -207,6 +207,19 @@ int main() {
         CHECK(!bad.authenticate("u", "p"));
         CHECK(contains(bad.lastError(), "Wrong username or password"));
     }
+    // A 400 (e.g. rejected client headers) surfaces the server's message
+    // instead of being mislabeled as bad credentials.
+    {
+        FakeHttpServer badHeaderServer;
+        CHECK(badHeaderServer.start());
+        FakeRoute badHeaders;
+        badHeaders.status = 400;
+        badHeaders.body = "{\"status\":\"error\",\"error\":\"Invalid or missing X-Client-Id header\"}";
+        badHeaderServer.addRoute("/api/v1/auth/login", badHeaders);
+        HoundClient bad("127.0.0.1", badHeaderServer.port());
+        CHECK(!bad.authenticate("u", "p"));
+        CHECK(contains(bad.lastError(), "Invalid or missing X-Client-Id header"));
+    }
 
     CHECK(client.authenticate("wiiu", "secret"));
     {
@@ -216,8 +229,8 @@ int main() {
         CHECK_STR(reqs.back().path, "/api/v1/auth/login");
         CHECK(contains(reqs.back().body, "\"username\":\"wiiu\""));
         CHECK(contains(reqs.back().body, "\"password\":\"secret\""));
-        CHECK(contains(reqs.back().headers, "X-Client-Id: uhound-wiiu"));
-        CHECK(contains(reqs.back().headers, "X-Client-Platform: wiiu"));
+        CHECK(contains(reqs.back().headers, "X-Client-Id: hound-app"));
+        CHECK(contains(reqs.back().headers, "X-Client-Platform: web"));
         CHECK(contains(reqs.back().headers, "X-Device-Id: test-device"));
     }
     CHECK_STR(client.userName(), "Wii U");
@@ -489,7 +502,7 @@ int main() {
         CHECK(contains(reqs.back().body, "\"current_progress_seconds\":300"));
         CHECK(contains(reqs.back().body, "\"total_duration_seconds\":"));
         CHECK(contains(reqs.back().body, "\"media_type\":\"movie\""));
-        CHECK(contains(reqs.back().body, "\"client_platform\":\"wiiu\""));
+        CHECK(contains(reqs.back().body, "\"client_platform\":\"web\""));
     }
     // Under two minutes watched: skipped locally, no request sent.
     int before = (int)server.requests().size();
