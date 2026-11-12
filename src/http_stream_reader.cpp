@@ -378,13 +378,14 @@ bool HttpStreamReader::open() {
     OSReport("Ufin: headers parsed ok, is_chunked=%d content-type=%s\n", (int)is_chunked_,
              contentType.empty() ? "(none)" : contentType.c_str());
 
-    // A 200 whose body is not media (a JSON error object, or an HTML page
-    // from an upstream the server proxied) would otherwise only fail later
-    // as a cryptic FFmpeg "Invalid data found" inside the decoder. Refuse
-    // it here, with the body's own message.
+    // A 200 whose body is not media (a JSON error object, a text/plain message
+    // like "Video URL not provided", or an HTML page from an upstream the
+    // server proxied) would otherwise only fail later as a cryptic FFmpeg
+    // "Invalid data found" inside the decoder. Refuse it here, with the body's
+    // own message.
     const std::string lowerType = toLower(contentType);
     if (lowerType.find("json") != std::string::npos ||
-        lowerType.find("text/html") != std::string::npos) {
+        lowerType.rfind("text/", 0) == 0) {
         std::string body;
         if (sock_buf_pos_ < sock_buf_len_ || waitReadable(sock_, 2)) {
             if (fillSockBuf()) {
@@ -402,6 +403,17 @@ bool HttpStreamReader::open() {
         close(sock_);
         sock_ = -1;
         return false;
+    }
+
+    // Log the first body bytes so a future failure shows what the server
+    // actually sent (EBML magic for MKV, "ftyp" for MP4, '{' for JSON, ...).
+    if (sock_buf_pos_ >= sock_buf_len_ && waitReadable(sock_, 2) && fillSockBuf()) {
+        const size_t n = std::min<size_t>(sock_buf_len_ - sock_buf_pos_, 16);
+        char hex[3 * 16 + 1] = {0};
+        for (size_t i = 0; i < n; i++) {
+            snprintf(hex + 3 * i, 4, "%02x ", sock_buf_[sock_buf_pos_ + i]);
+        }
+        OSReport("Ufin: first %zu body bytes: %s\n", n, hex);
     }
 
     // If Jellyfin ever serves this non-chunked (e.g. a future version

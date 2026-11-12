@@ -251,6 +251,21 @@ int main() {
         CHECK(contains(r.lastError(), "torrent not ready"));
     }
 
+    // --- 8b. A text/plain error body (e.g. the Hound server's "Video URL not
+    // provided") is refused the same way as JSON/HTML. ---
+    {
+        ScriptedServer server([](int fd) {
+            const std::string body = "Video URL not provided";
+            sendAll(fd, "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: " +
+                            std::to_string(body.size()) + "\r\n\r\n" + body);
+        });
+        CHECK(server.start());
+        HttpStreamReader r("127.0.0.1", server.port(), "/x");
+        CHECK(!r.open());
+        CHECK(contains(r.lastError(), "did not send video"));
+        CHECK(contains(r.lastError(), "Video URL not provided"));
+    }
+
     // --- 9. Connecting to nothing at all still fails fast with its own message. ---
     {
         int port;
