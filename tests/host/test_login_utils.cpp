@@ -12,7 +12,11 @@ int main() {
     CHECK(parseServerAddress("http://Hound.local:2323/web/index.html", host, port, err));
     CHECK_STR(host, "Hound.local"); CHECK_EQ(port, 2323);
     CHECK(parseServerAddress("HTTP://127.0.0.1", host, port, err));
-    CHECK_STR(host, "127.0.0.1");
+    CHECK_STR(host, "127.0.0.1"); CHECK_EQ(port, 80);
+    CHECK(parseServerAddress("http://popcorn.ollieis.online/", host, port, err));
+    CHECK_STR(host, "popcorn.ollieis.online"); CHECK_EQ(port, 80);
+    CHECK(parseServerAddress("http://hound.example.com/media", host, port, err));
+    CHECK_STR(host, "hound.example.com"); CHECK_EQ(port, 80);
     CHECK(!parseServerAddress("https://jelly.example.com", host, port, err));
     CHECK(err.find("https") != std::string::npos);
     CHECK(!parseServerAddress("192.168.1.100:abc", host, port, err));

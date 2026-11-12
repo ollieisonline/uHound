@@ -243,6 +243,43 @@ int main() {
         CHECK(contains(saved.lastError(), "expired"));
     }
 
+    // A reverse proxy's http->http redirect is followed...
+    {
+        FakeHttpServer redServer;
+        CHECK(redServer.start());
+        FakeRoute hop;
+        hop.status = 301;
+        hop.extraHeaders = "Location: http://127.0.0.1:" + std::to_string(redServer.port()) + "/api/v1/real\r\n";
+        redServer.addRoute("/api/v1/server_info", hop);
+        redServer.setHandler([](const FakeRequest& req, FakeRoute& out) {
+            if (req.path.rfind("/api/v1/real", 0) == 0) {
+                out = FakeRoute{};
+                out.body = "{\"status\":\"success\",\"data\":{\"server_id\":\"s1\"}}";
+                return true;
+            }
+            return false;
+        });
+        HoundClient saved("127.0.0.1", redServer.port());
+        saved.useSavedLogin("wiiu", "tok123");
+        CHECK(saved.validateLogin());
+        auto reqs = redServer.requests();
+        CHECK_EQ((int)reqs.size(), 2);
+        CHECK(contains(reqs.back().path, "/api/v1/real"));
+    }
+    // ...but a redirect to https:// is reported as the clear error it is.
+    {
+        FakeHttpServer redServer;
+        CHECK(redServer.start());
+        FakeRoute hop;
+        hop.status = 301;
+        hop.extraHeaders = "Location: https://hound.example.com/api/v1/server_info\r\n";
+        redServer.addRoute("/api/v1/server_info", hop);
+        HoundClient saved("127.0.0.1", redServer.port());
+        saved.useSavedLogin("wiiu", "tok123");
+        CHECK(!saved.validateLogin());
+        CHECK(contains(saved.lastError(), "redirected to https"));
+    }
+
     // --- views and browsing ------------------------------------------------
     std::vector<MediaItem> list;
     CHECK(client.getViews(list));

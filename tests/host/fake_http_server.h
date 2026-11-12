@@ -23,6 +23,8 @@ struct FakeRoute {
     int status = 200;
     std::string contentType = "application/json";
     std::string body;
+    // Extra response header lines, e.g. "Location: http://.../path\r\n".
+    std::string extraHeaders;
     bool chunked = false;
     size_t chunkSize = 64 * 1024;
     // Optional bandwidth limit for chunked bodies, to starve a player on
@@ -179,7 +181,8 @@ private:
         }
 
         std::string head = "HTTP/1.1 " + std::to_string(route.status) + (route.status == 200 ? " OK" : " Error") +
-                           "\r\nContent-Type: " + route.contentType + "\r\nConnection: close\r\n";
+                           "\r\nContent-Type: " + route.contentType + "\r\nConnection: close\r\n" +
+                           route.extraHeaders;
         if (route.chunked) {
             head += "Transfer-Encoding: chunked\r\nAccept-Ranges: none\r\n\r\n";
             if (!sendAll(fd, head.data(), head.size())) return;

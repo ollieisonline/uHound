@@ -1556,9 +1556,11 @@ struct App {
                     const std::string& e = client.lastError();
                     loginMessage = e.find("status 401") != std::string::npos || e.find("Wrong username") != std::string::npos
                                  ? "Wrong username or password."
-                                 : e.find("status 0") != std::string::npos
-                                     ? "Can't reach " + loginServer + ". Check the address and that Hound is running."
-                                     : e;
+                                 : e.find("redirected to https") != std::string::npos
+                                     ? e
+                                     : e.find("status 0") != std::string::npos
+                                         ? "Can't reach " + loginServer + ". Check the address and that Hound is running."
+                                         : e;
                     loginMessageIsError = true;
                 }
                 break;

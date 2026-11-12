@@ -126,6 +126,17 @@ struct Envelope {
     explicit operator bool() const { return data != nullptr; }
 };
 
+// "what failed (status N)". When there is no HTTP status at all (DNS,
+// connect, timeout, a redirect this client can't follow), the socket-level
+// reason from the response body is included so the sign-in screen can show
+// why the server was unreachable.
+static std::string statusError(const HttpResponse& resp, const char* what) {
+    if (resp.status_code == 0 && !resp.body.empty()) {
+        return std::string(what) + " failed (status 0: " + resp.body + ")";
+    }
+    return std::string(what) + " failed (status " + std::to_string(resp.status_code) + ")";
+}
+
 // GETs `path` and parses the {status, data} envelope. On failure, err says
 // what happened and out is left empty.
 static bool getEnvelope(const HoundClient& client, const std::string& auth, const std::string& path,
@@ -133,7 +144,7 @@ static bool getEnvelope(const HoundClient& client, const std::string& auth, cons
     out = Envelope{};
     HttpResponse resp = http_get(client.host(), client.port(), path, auth);
     if (!resp.success) {
-        err = std::string(what) + " failed (status " + std::to_string(resp.status_code) + ")";
+        err = statusError(resp, what);
         return false;
     }
     cJSON* json = cJSON_Parse(resp.body.c_str());
@@ -267,7 +278,7 @@ bool HoundClient::authenticate(const std::string& username, const std::string& p
     if (!resp.success) {
         last_error_ = resp.status_code == 401 || resp.status_code == 400
                           ? "Wrong username or password."
-                          : "login failed (status " + std::to_string(resp.status_code) + ")";
+                          : statusError(resp, "login");
         return false;
     }
 
@@ -305,8 +316,7 @@ bool HoundClient::validateLogin() {
     HttpResponse resp = http_get(host_, port_, std::string(kApi) + "/server_info", authHeader());
     if (!resp.success) {
         last_error_ = resp.status_code == 401 ? "the saved sign-in has expired"
-                                              : "could not check the saved sign-in (status " +
-                                                    std::to_string(resp.status_code) + ")";
+                                              : statusError(resp, "checking the saved sign-in");
         return false;
     }
     return true;
@@ -734,8 +744,7 @@ bool HoundClient::setFavorite(const MediaItem& item, bool favorite) {
                            bodyOwned);
     }
     if (!resp.success) {
-        last_error_ = std::string(favorite ? "adding to" : "removing from") +
-                      " the watchlist failed (status " + std::to_string(resp.status_code) + ")";
+        last_error_ = statusError(resp, favorite ? "adding to the watchlist" : "removing from the watchlist");
         return false;
     }
     return true;
@@ -764,7 +773,7 @@ bool HoundClient::setPlayed(const MediaItem& item, bool played) {
         free(bodyStr);
         cJSON_Delete(body);
         if (!resp.success) {
-            last_error_ = "marking watched failed (status " + std::to_string(resp.status_code) + ")";
+            last_error_ = statusError(resp, "marking watched");
             return false;
         }
         return true;
@@ -807,7 +816,7 @@ bool HoundClient::setPlayed(const MediaItem& item, bool played) {
     free(bodyStr);
     cJSON_Delete(del);
     if (!resp.success) {
-        last_error_ = "unmarking watched failed (status " + std::to_string(resp.status_code) + ")";
+        last_error_ = statusError(resp, "unmarking watched");
         return false;
     }
     return true;
